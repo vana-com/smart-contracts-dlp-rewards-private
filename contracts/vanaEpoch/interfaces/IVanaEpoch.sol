@@ -50,13 +50,15 @@ interface IVanaEpoch {
     function updateEpochSize(uint256 newEpochSize) external;
     function updateEpochRewardAmount(uint256 newEpochRewardAmount) external;
 
-    function updateDlpRoot(address newDlpRootAddress) external;
+    function updateDlpRegistry(address newDlpRegistry) external;
 
     function createEpochs() external;
     function createEpochsUntilBlockNumber(uint256 blockNumber) external;
 
-    struct EpochDlpReward {
+    struct DlpRewards {
         uint256 dlpId;
         uint256 rewardAmount;
     }
+
+    function saveEpochDlpRewards(uint256 epochId, DlpRewards[] calldata dlpRewards) external;
 }

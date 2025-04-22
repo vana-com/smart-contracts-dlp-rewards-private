@@ -20,9 +20,8 @@ const config: HardhatUserConfig = {
     hardhat: {
       allowUnlimitedContractSize: true,
       // forking: {
-      //   url: "https://archive.vana.org",
-      //   // url: "https://rpc.moksha.vana.org",
-      //   // blockNumber: 1288639,
+      //   url: process.env.VANA_RPC_URL || "",
+      //   // url: process.env.MOKSHA_RPC_URL || "",
       // },
     },
     vana: {
@@ -41,13 +40,13 @@ const config: HardhatUserConfig = {
         process.env.DEPLOYER_PRIVATE_KEY !== undefined
           ? [process.env.DEPLOYER_PRIVATE_KEY]
           : [],
-    }
+    },
   },
   etherscan: {
     apiKey: {
       // Is not required by blockscout. Can be any non-empty string
-      vana: "abc",
-      moksha: "abc",
+      vana: "empty",
+      moksha: "empty",
     },
     customChains: [
       {
@@ -62,16 +61,8 @@ const config: HardhatUserConfig = {
         network: "moksha",
         chainId: 14800,
         urls: {
-          apiURL: "https://api.moksha.vanascan.io/api/",
-          browserURL: "https://moksha.vanascan.io",
-        },
-      },
-      {
-        network: "maya",
-        chainId: 14808,
-        urls: {
-          apiURL: process.env.MAYA_API_URL || "",
-          browserURL: process.env.MAYA_BROWSER_URL || "",
+          apiURL: process.env.MOKSHA_API_URL || "",
+          browserURL: process.env.MOKSHA_BROWSER_URL || "",
         },
       },
     ],

@@ -6,9 +6,6 @@ import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol"
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import "./interfaces/DLPRegistryStorageV1.sol";
-import {IDLPRoot} from "../root/interfaces/IDLPRoot.sol";
-import {IDLPTreasury} from "../dlpTreasury/interfaces/IDLPTreasury.sol";
-import {IDLPRootCore} from "../rootCore/interfaces/IDLPRootCore.sol";
 
 contract DLPRegistryImplementation is
     UUPSUpgradeable,
@@ -49,7 +46,7 @@ DLPRegistryStorageV1
     event DlpStatusUpdated(uint256 indexed dlpId, DlpStatus newStatus);
     event DlpVerificationUpdated(uint256 indexed dlpId, bool verified);
     event DlpSubEligibilityThresholdUpdated(uint256 newDlpSubEligibilityThreshold);
-    event MinDlpDepositAmountUpdated(uint256 newMinDlpDepositAmount);
+    event DlpRegistrationDepositAmountUpdated(uint256 newDlpRegistrationDepositAmount);
     event DLPTokenUpdated(uint256 indexed dlpId, address tokenAddress);
 
     // Custom errors
@@ -147,21 +144,19 @@ DLPRegistryStorageV1
         _unpause();
     }
 
-    function updateMinDlpDepositAmount(
-        uint256 newMinDlpDepositAmount
+    function updateDlpRegistrationDepositAmount(
+        uint256 newDlpRegistrationDepositAmount
     ) external override onlyRole(MAINTAINER_ROLE) {
-        minDlpDepositAmount = newMinDlpDepositAmount;
-        emit MinDlpDepositAmountUpdated(newMinDlpDepositAmount);
+        dlpRegistrationDepositAmount = newDlpRegistrationDepositAmount;
+        emit DlpRegistrationDepositAmountUpdated(newDlpRegistrationDepositAmount);
     }
 
     function updateVanaEpoch(address newVanaEpochAddress) external override onlyRole(MAINTAINER_ROLE) {
         vanaEpoch = IVanaEpoch(newVanaEpochAddress);
     }
 
-    function updateTreasury(
-        address newTreasuryAddress
-    ) external override onlyRole(MAINTAINER_ROLE) {
-        treasury = IDLPTreasury(newTreasuryAddress);
+    function updateTreasury(address newTreasuryAddress) external override onlyRole(MAINTAINER_ROLE) {
+        treasury = ITreasury(newTreasuryAddress);
     }
 
     function registerDlp(
@@ -293,7 +288,7 @@ DLPRegistryStorageV1
             revert InvalidName();
         }
 
-        if (msg.value < minDlpDepositAmount) {
+        if (msg.value < dlpRegistrationDepositAmount) {
             revert InvalidDepositAmount();
         }
 
@@ -352,39 +347,39 @@ DLPRegistryStorageV1
         return count > 3;
     }
 
-    function migrateDlpData(address dlpRootCoreAddress, uint256 startDlpId, uint256 endDlpId) external onlyRole(MAINTAINER_ROLE) {
-        IDLPRootCore dlpRootCore = IDLPRootCore(dlpRootCoreAddress);
-
-        for (uint256 dlpId = startDlpId; dlpId <= endDlpId; ) {
-            IDLPRootCore.DlpInfo memory dlpInfo = dlpRootCore.dlps(dlpId);
-            Dlp storage dlp = _dlps[dlpId];
-
-            dlp.id = dlpInfo.id;
-            dlp.dlpAddress = dlpInfo.dlpAddress;
-            dlp.ownerAddress = dlpInfo.ownerAddress;
-            dlp.treasuryAddress = payable(dlpInfo.treasuryAddress);
-            dlp.name = dlpInfo.name;
-            dlp.iconUrl = dlpInfo.iconUrl;
-            dlp.website = dlpInfo.website;
-            dlp.metadata = dlpInfo.metadata;
-            dlp.status = DlpStatus(uint256(dlpInfo.status));
-            dlp.registrationBlockNumber = dlpInfo.registrationBlockNumber;
-            dlp.isVerified = dlpInfo.isVerified;
-
-            dlpIds[dlpInfo.dlpAddress] = dlpId;
-            dlpNameToId[dlpInfo.name] = dlpId;
-
-            if (DlpStatus(uint256(dlpInfo.status)) == DlpStatus.Eligible) {
-                _eligibleDlpsList.add(dlpId);
-            }
-
-            dlpsCount++;
-
-            unchecked {
-                ++dlpId;
-            }
-        }
-    }
+//    function migrateDlpData(address dlpRootCoreAddress, uint256 startDlpId, uint256 endDlpId) external onlyRole(MAINTAINER_ROLE) {
+//        IDLPRootCore dlpRootCore = IDLPRootCore(dlpRootCoreAddress);
+//
+//        for (uint256 dlpId = startDlpId; dlpId <= endDlpId; ) {
+//            IDLPRootCore.DlpInfo memory dlpInfo = dlpRootCore.dlps(dlpId);
+//            Dlp storage dlp = _dlps[dlpId];
+//
+//            dlp.id = dlpInfo.id;
+//            dlp.dlpAddress = dlpInfo.dlpAddress;
+//            dlp.ownerAddress = dlpInfo.ownerAddress;
+//            dlp.treasuryAddress = payable(dlpInfo.treasuryAddress);
+//            dlp.name = dlpInfo.name;
+//            dlp.iconUrl = dlpInfo.iconUrl;
+//            dlp.website = dlpInfo.website;
+//            dlp.metadata = dlpInfo.metadata;
+//            dlp.status = DlpStatus(uint256(dlpInfo.status));
+//            dlp.registrationBlockNumber = dlpInfo.registrationBlockNumber;
+//            dlp.isVerified = dlpInfo.isVerified;
+//
+//            dlpIds[dlpInfo.dlpAddress] = dlpId;
+//            dlpNameToId[dlpInfo.name] = dlpId;
+//
+//            if (DlpStatus(uint256(dlpInfo.status)) == DlpStatus.Eligible) {
+//                _eligibleDlpsList.add(dlpId);
+//            }
+//
+//            dlpsCount++;
+//
+//            unchecked {
+//                ++dlpId;
+//            }
+//        }
+//    }
 
     function _setDlpEligibility(Dlp storage dlp) internal {
         if (dlp.status == DlpStatus.Registered) {

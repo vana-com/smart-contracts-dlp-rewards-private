@@ -5,8 +5,7 @@ import "./IDLPPerformance.sol";
 
 abstract contract DLPPerformanceStorageV1 is IDLPPerformance {
     IDLPRegistry public override dlpRegistry;
+    IVanaEpoch public override vanaEpoch;
 
-    mapping(uint256 epochId => Epoch) internal _epochs;
-
-    mapping(RatingType ratingType => uint256 percentage) public override ratingPercentages;
+    mapping(uint256 epochId => EpochPerformance) internal _epochPerformances;
 }

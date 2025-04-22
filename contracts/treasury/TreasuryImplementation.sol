@@ -7,14 +7,14 @@ import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/Address.sol";
-import "./interfaces/DLPTreasuryStorageV1.sol";
+import "./interfaces/TreasuryStorageV1.sol";
 
-contract DLPTreasuryImplementation is
+contract TreasuryImplementation is
     UUPSUpgradeable,
     PausableUpgradeable,
     AccessControlUpgradeable,
     ReentrancyGuardUpgradeable,
-    DLPTreasuryStorageV1
+TreasuryStorageV1
 {
     using SafeERC20 for IERC20;
     using Address for address payable;
@@ -52,6 +52,8 @@ contract DLPTreasuryImplementation is
         _grantRole(CUSTODIAN_ROLE, ownerAddress);
         _grantRole(CUSTODIAN_ROLE, initCustodian);
     }
+
+    function _authorizeUpgrade(address newImplementation) internal virtual override onlyRole(DEFAULT_ADMIN_ROLE) {}
 
     function pause() external override onlyRole(DEFAULT_ADMIN_ROLE) {
         _pause();

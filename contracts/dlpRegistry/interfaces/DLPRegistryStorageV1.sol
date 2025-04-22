@@ -5,9 +5,9 @@ import "./IDLPRegistry.sol";
 
 abstract contract DLPRegistryStorageV1 is IDLPRegistry {
     IVanaEpoch public override vanaEpoch;
-    IDLPTreasury public override treasury;
+    ITreasury public override treasury;
 
-    uint256 public override minDlpDepositAmount;
+    uint256 public override dlpRegistrationDepositAmount;
 
     uint256 public override dlpsCount;
     mapping(uint256 dlpId => Dlp dlp) internal _dlps;

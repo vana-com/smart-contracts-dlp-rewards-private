@@ -6,7 +6,6 @@ import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol"
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import "./interfaces/VanaEpochStorageV1.sol";
-import {IDLPRootEpoch} from "../rootEpoch/interfaces/IDLPRootEpoch.sol";
 
 contract VanaEpochImplementation is
     UUPSUpgradeable,
@@ -25,6 +24,7 @@ contract VanaEpochImplementation is
     event EpochSizeUpdated(uint256 newEpochSize);
     event EpochRewardAmountUpdated(uint256 newEpochRewardAmount);
 
+    error EpochDlpRewardAlreadyAdded(uint256 dlpId);
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -121,6 +121,22 @@ contract VanaEpochImplementation is
         _createEpochsUntilBlockNumber(blockNumber < block.number ? blockNumber : block.number);
     }
 
+    function saveEpochDlpRewards(uint256 epochId, DlpRewards[] calldata dlpRewards) external override nonReentrant whenNotPaused {
+        Epoch storage epoch = _epochs[epochId];
+
+        for (uint256 i = 0; i < dlpRewards.length; i++) {
+            uint256 dlpId = dlpRewards[i].dlpId;
+            uint256 rewardAmount = dlpRewards[i].rewardAmount;
+
+            if (epoch.dlpIds.contains(dlpId)) {
+                revert EpochDlpRewardAlreadyAdded(dlpId);
+            } else {
+                epoch.dlpIds.add(dlpId);
+                epoch.dlps[dlpId].rewardAmount = rewardAmount;
+            }
+        }
+    }
+
     /**
      * @notice Creates and finalises epochs up to target block
      */
@@ -142,45 +158,45 @@ contract VanaEpochImplementation is
         }
     }
 
-    function migrateEpochData(address dlpRootEpochAddress, uint256 epochIdStart, uint256 epochIdEnd) external onlyRole(MAINTAINER_ROLE) {
-        IDLPRootEpoch dlpRootEpoch = IDLPRootEpoch(dlpRootEpochAddress);
-
-        uint256 dlpsCount = dlpRegistry.dlpsCount();
-
-        for (uint256 epochId = epochIdStart; epochId <= epochIdEnd; ) {
-            Epoch storage epoch = _epochs[epochId];
-            IDLPRootEpoch.EpochInfo memory epochInfo = dlpRootEpoch.epochs(epochId);
-
-            epoch.startBlock = epochInfo.startBlock;
-            epoch.endBlock = epochInfo.endBlock;
-            epoch.rewardAmount = epochInfo.rewardAmount;
-            epoch.isFinalised = epochInfo.isFinalised;
-
-            uint256 dlpId;
-            uint256 epochDlpIdsCount = epochInfo.dlpIds.length;
-            for (dlpId = 0; dlpId < epochDlpIdsCount; ) {
-                epoch.dlpIds.add(epochInfo.dlpIds[dlpId]);
-
-                unchecked {
-                    ++dlpId;
-                }
-            }
-
-            for (dlpId = 1; dlpId <= dlpsCount; ) {
-                IDLPRootEpoch.EpochDlpInfo memory epochDlpOld = dlpRootEpoch.epochDlps(epochId, dlpId);
-                EpochDlp storage epochDlp = epoch.dlps[dlpId];
-
-                epochDlp.rewardAmount = epochDlpOld.ownerRewardAmount;
-                epochDlp.rewardClaimed = epochDlpOld.ownerRewardAmount;
-
-                unchecked {
-                    ++dlpId;
-                }
-            }
-
-            unchecked {
-                ++epochId;
-            }
-        }
-    }
+//    function migrateEpochData(address dlpRootEpochAddress, uint256 epochIdStart, uint256 epochIdEnd) external onlyRole(MAINTAINER_ROLE) {
+//        IDLPRootEpoch dlpRootEpoch = IDLPRootEpoch(dlpRootEpochAddress);
+//
+//        uint256 dlpsCount = dlpRegistry.dlpsCount();
+//
+//        for (uint256 epochId = epochIdStart; epochId <= epochIdEnd; ) {
+//            Epoch storage epoch = _epochs[epochId];
+//            IDLPRootEpoch.EpochInfo memory epochInfo = dlpRootEpoch.epochs(epochId);
+//
+//            epoch.startBlock = epochInfo.startBlock;
+//            epoch.endBlock = epochInfo.endBlock;
+//            epoch.rewardAmount = epochInfo.rewardAmount;
+//            epoch.isFinalised = epochInfo.isFinalised;
+//
+//            uint256 dlpId;
+//            uint256 epochDlpIdsCount = epochInfo.dlpIds.length;
+//            for (dlpId = 0; dlpId < epochDlpIdsCount; ) {
+//                epoch.dlpIds.add(epochInfo.dlpIds[dlpId]);
+//
+//                unchecked {
+//                    ++dlpId;
+//                }
+//            }
+//
+//            for (dlpId = 1; dlpId <= dlpsCount; ) {
+//                IDLPRootEpoch.EpochDlpInfo memory epochDlpOld = dlpRootEpoch.epochDlps(epochId, dlpId);
+//                EpochDlp storage epochDlp = epoch.dlps[dlpId];
+//
+//                epochDlp.rewardAmount = epochDlpOld.ownerRewardAmount;
+//                epochDlp.rewardClaimed = epochDlpOld.ownerRewardAmount;
+//
+//                unchecked {
+//                    ++dlpId;
+//                }
+//            }
+//
+//            unchecked {
+//                ++epochId;
+//            }
+//        }
+//    }
 }

@@ -4,7 +4,7 @@ pragma solidity 0.8.24;
 import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import "@openzeppelin/contracts/utils/structs/Checkpoints.sol";
 import {IVanaEpoch} from "../../vanaEpoch/interfaces/IVanaEpoch.sol";
-import {IDLPTreasury} from "../../dlpTreasury/interfaces/IDLPTreasury.sol";
+import {ITreasury} from "../../treasury/interfaces/ITreasury.sol";
 
 interface IDLPRegistry {
     enum DlpStatus {
@@ -33,16 +33,12 @@ interface IDLPRegistry {
     // View functions for contract state and configuration
     function version() external pure returns (uint256);
     function vanaEpoch() external view returns (IVanaEpoch);
-    function dlpRegistryTreasury() external view returns (IDLPTreasury);
+    function treasury() external view returns (ITreasury);
     function eligibleDlpsListValues() external view returns (uint256[] memory);
     function eligibleDlpsListCount() external view returns (uint256);
     function eligibleDlpsListAt(uint256 index) external view returns (uint256);
 
-    function minDlpStakersPercentage() external view returns (uint256);
-    function maxDlpStakersPercentage() external view returns (uint256);
-    function minDlpRegistrationStake() external view returns (uint256);
-    function dlpEligibilityThreshold() external view returns (uint256);
-    function dlpSubEligibilityThreshold() external view returns (uint256);
+    function dlpRegistrationDepositAmount() external view returns (uint256);
     function eligibleDlpsLimit() external view returns (uint256);
     function dlpsCount() external view returns (uint256);
 
@@ -71,8 +67,9 @@ interface IDLPRegistry {
     // Admin functions
     function pause() external;
     function unpause() external;
-
-    function updateDlpRoot(address newDlpRootAddress) external;
+    function updateTreasury(address newTreasuryAddress) external;
+    function updateVanaEpoch(address newVanaEpochAddress) external;
+    function updateDlpRegistrationDepositAmount(uint256 newDlpRegistrationDepositAmount) external;
 
     struct DlpRegistration {
         address dlpAddress;
@@ -89,4 +86,5 @@ interface IDLPRegistry {
     function updateDlpVerification(uint256 dlpId, bool isVerified) external;
     function updateDlp(uint256 dlpId, DlpRegistration calldata dlpUpdateInfo) external;
     function deregisterDlp(uint256 dlpId) external;
+    function updateDlpToken(uint256 dlpId, address tokenAddress) external;
 }
