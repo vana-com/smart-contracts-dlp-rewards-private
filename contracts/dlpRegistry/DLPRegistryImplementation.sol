@@ -6,13 +6,14 @@ import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol"
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import "./interfaces/DLPRegistryStorageV1.sol";
+import {IDLPRootCore} from "./interfaces/IDLPRootCore.sol";
 
 contract DLPRegistryImplementation is
     UUPSUpgradeable,
     PausableUpgradeable,
     AccessControlUpgradeable,
     ReentrancyGuardUpgradeable,
-DLPRegistryStorageV1
+    DLPRegistryStorageV1
 {
     using EnumerableSet for EnumerableSet.UintSet;
     using EnumerableSet for EnumerableSet.AddressSet;
@@ -47,7 +48,7 @@ DLPRegistryStorageV1
     event DlpVerificationUpdated(uint256 indexed dlpId, bool verified);
     event DlpSubEligibilityThresholdUpdated(uint256 newDlpSubEligibilityThreshold);
     event DlpRegistrationDepositAmountUpdated(uint256 newDlpRegistrationDepositAmount);
-    event DLPTokenUpdated(uint256 indexed dlpId, address tokenAddress);
+    event DlpTokenUpdated(uint256 indexed dlpId, address tokenAddress);
 
     // Custom errors
     error InvalidParam();
@@ -64,7 +65,7 @@ DLPRegistryStorageV1
     error EpochNotEnded();
     error EpochDlpScoreAlreadySaved();
     error EpochRewardsAlreadyDistributed();
-    error LastEpochMustBeFinalised();
+    error LastEpochMustBeFinalized();
 
     modifier onlyDlpOwner(uint256 dlpId) {
         if (_dlps[dlpId].ownerAddress != msg.sender) {
@@ -151,12 +152,12 @@ DLPRegistryStorageV1
         emit DlpRegistrationDepositAmountUpdated(newDlpRegistrationDepositAmount);
     }
 
-    function updateVanaEpoch(address newVanaEpochAddress) external override onlyRole(MAINTAINER_ROLE) {
-        vanaEpoch = IVanaEpoch(newVanaEpochAddress);
+    function updateVanaEpoch(address vanaEpochAddress) external override onlyRole(MAINTAINER_ROLE) {
+        vanaEpoch = IVanaEpoch(vanaEpochAddress);
     }
 
-    function updateTreasury(address newTreasuryAddress) external override onlyRole(MAINTAINER_ROLE) {
-        treasury = ITreasury(newTreasuryAddress);
+    function updateTreasury(address treasuryAddress) external override onlyRole(MAINTAINER_ROLE) {
+        treasury = ITreasury(treasuryAddress);
     }
 
     function registerDlp(
@@ -196,7 +197,7 @@ DLPRegistryStorageV1
         Dlp storage dlp = _dlps[dlpId];
         dlp.tokenAddress = tokenAddress;
 
-        emit DLPTokenUpdated(dlpId, tokenAddress);
+        emit DlpTokenUpdated(dlpId, tokenAddress);
     }
 
     /**
@@ -255,8 +256,8 @@ DLPRegistryStorageV1
         vanaEpoch.createEpochs();
 
         uint256 epochsCount = vanaEpoch.epochsCount();
-        if (epochsCount > 1 && !vanaEpoch.epochs(epochsCount - 1).isFinalised) {
-            revert LastEpochMustBeFinalised();
+        if (epochsCount > 1 && !vanaEpoch.epochs(epochsCount - 1).isFinalized) {
+            revert LastEpochMustBeFinalized();
         }
 
         Dlp storage dlp = _dlps[dlpId];
@@ -332,7 +333,6 @@ DLPRegistryStorageV1
         }
     }
 
-
     function _validateDlpNameLength(string memory str) internal pure returns (bool) {
         bytes memory strBytes = bytes(str);
         uint256 count = 0;
@@ -347,41 +347,57 @@ DLPRegistryStorageV1
         return count > 3;
     }
 
-//    function migrateDlpData(address dlpRootCoreAddress, uint256 startDlpId, uint256 endDlpId) external onlyRole(MAINTAINER_ROLE) {
-//        IDLPRootCore dlpRootCore = IDLPRootCore(dlpRootCoreAddress);
-//
-//        for (uint256 dlpId = startDlpId; dlpId <= endDlpId; ) {
-//            IDLPRootCore.DlpInfo memory dlpInfo = dlpRootCore.dlps(dlpId);
-//            Dlp storage dlp = _dlps[dlpId];
-//
-//            dlp.id = dlpInfo.id;
-//            dlp.dlpAddress = dlpInfo.dlpAddress;
-//            dlp.ownerAddress = dlpInfo.ownerAddress;
-//            dlp.treasuryAddress = payable(dlpInfo.treasuryAddress);
-//            dlp.name = dlpInfo.name;
-//            dlp.iconUrl = dlpInfo.iconUrl;
-//            dlp.website = dlpInfo.website;
-//            dlp.metadata = dlpInfo.metadata;
-//            dlp.status = DlpStatus(uint256(dlpInfo.status));
-//            dlp.registrationBlockNumber = dlpInfo.registrationBlockNumber;
-//            dlp.isVerified = dlpInfo.isVerified;
-//
-//            dlpIds[dlpInfo.dlpAddress] = dlpId;
-//            dlpNameToId[dlpInfo.name] = dlpId;
-//
-//            if (DlpStatus(uint256(dlpInfo.status)) == DlpStatus.Eligible) {
-//                _eligibleDlpsList.add(dlpId);
-//            }
-//
-//            dlpsCount++;
-//
-//            unchecked {
-//                ++dlpId;
-//            }
-//        }
-//    }
+    function migrateDlpData(address dlpRootCoreAddress, uint256 startDlpId, uint256 endDlpId) external onlyRole(MAINTAINER_ROLE) {
+        IDLPRootCore dlpRootCore = IDLPRootCore(dlpRootCoreAddress);
+
+        for (uint256 dlpId = startDlpId; dlpId <= endDlpId; ) {
+            IDLPRootCore.DlpInfo memory dlpInfo = dlpRootCore.dlps(dlpId);
+            Dlp storage dlp = _dlps[dlpId];
+
+            dlp.id = dlpInfo.id;
+            dlp.dlpAddress = dlpInfo.dlpAddress;
+            dlp.ownerAddress = dlpInfo.ownerAddress;
+            dlp.treasuryAddress = payable(dlpInfo.treasuryAddress);
+            dlp.name = dlpInfo.name;
+            dlp.iconUrl = dlpInfo.iconUrl;
+            dlp.website = dlpInfo.website;
+            dlp.metadata = dlpInfo.metadata;
+            dlp.status = DlpStatus(uint256(dlpInfo.status));
+            dlp.registrationBlockNumber = dlpInfo.registrationBlockNumber;
+            dlp.isVerified = dlpInfo.isVerified;
+
+            dlpIds[dlpInfo.dlpAddress] = dlpId;
+            dlpNameToId[dlpInfo.name] = dlpId;
+
+            if (DlpStatus(uint256(dlpInfo.status)) == DlpStatus.Eligible) {
+                _eligibleDlpsList.add(dlpId);
+            }
+
+            emit DlpRegistered(
+                dlpId,
+                dlpInfo.dlpAddress,
+                dlpInfo.ownerAddress,
+                dlpInfo.treasuryAddress,
+                dlpInfo.name,
+                dlpInfo.iconUrl,
+                dlpInfo.website,
+                dlpInfo.metadata
+            );
+
+            ++dlpsCount;
+
+            unchecked {
+                ++dlpId;
+            }
+        }
+    }
 
     function _setDlpEligibility(Dlp storage dlp) internal {
+        uint256 epochsCount = vanaEpoch.epochsCount();
+        if (epochsCount > 1 && !vanaEpoch.epochs(epochsCount - 1).isFinalized) {
+            revert LastEpochMustBeFinalized();
+        }
+
         if (dlp.status == DlpStatus.Registered) {
             if (dlp.isVerified && dlp.tokenAddress != address(0)) {
                 dlp.status = DlpStatus.Eligible;

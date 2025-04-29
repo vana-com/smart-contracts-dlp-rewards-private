@@ -18,13 +18,18 @@ contract VanaEpochImplementation is
     using EnumerableSet for EnumerableSet.AddressSet;
 
     bytes32 public constant MAINTAINER_ROLE = keccak256("MAINTAINER_ROLE");
+    bytes32 public constant DLP_PERFORMANCE_ROLE = keccak256("DLP_PERFORMANCE_ROLE");
 
     event EpochCreated(uint256 epochId, uint256 startBlock, uint256 endBlock, uint256 rewardAmount);
-    event EpochOverridden(uint256 epochId, uint256 startBlock, uint256 endBlock, uint256 rewardAmount);
     event EpochSizeUpdated(uint256 newEpochSize);
     event EpochRewardAmountUpdated(uint256 newEpochRewardAmount);
+    event EpochDlpRewardAdded(uint256 epochId, uint256 dlpId, uint256 rewardAmount);
+    event EpochFinalized(uint256 epochId);
 
     error EpochDlpRewardAlreadyAdded(uint256 dlpId);
+    error EpochNotEnded();
+    error EpochRewardExceeded();
+    error EpochRewardNotDistributed();
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -68,9 +73,12 @@ contract VanaEpochImplementation is
                 startBlock: _epochs[epochId].startBlock,
                 endBlock: _epochs[epochId].endBlock,
                 rewardAmount: _epochs[epochId].rewardAmount,
-                isFinalised: _epochs[epochId].isFinalised,
-                dlpIds: _epochs[epochId].dlpIds.values()
+                isFinalized: _epochs[epochId].isFinalized
             });
+    }
+
+    function epochDlps(uint256 epochId) external view override returns (uint256[] memory) {
+        return _epochs[epochId].dlpIds.values();
     }
 
     function epochDlps(uint256 epochId, uint256 dlpId) external view override returns (EpochDlpInfo memory) {
@@ -103,8 +111,14 @@ contract VanaEpochImplementation is
         emit EpochRewardAmountUpdated(newEpochRewardAmount);
     }
 
-    function updateDlpRegistry(address newDlpRegistryAddress) external override onlyRole(MAINTAINER_ROLE) {
-        dlpRegistry = IDLPRegistry(newDlpRegistryAddress);
+    function updateDlpRegistry(address dlpRegistryAddress) external override onlyRole(MAINTAINER_ROLE) {
+        dlpRegistry = IDLPRegistry(dlpRegistryAddress);
+    }
+
+    function updateDlpPerformance(address dlpPerformanceAddress) external override onlyRole(MAINTAINER_ROLE) {
+        _revokeRole(DLP_PERFORMANCE_ROLE, address(dlpPerformance));
+        dlpPerformance = IDLPPerformance(dlpPerformanceAddress);
+        _grantRole(DLP_PERFORMANCE_ROLE, address(dlpPerformance));
     }
 
     /**
@@ -121,8 +135,19 @@ contract VanaEpochImplementation is
         _createEpochsUntilBlockNumber(blockNumber < block.number ? blockNumber : block.number);
     }
 
-    function saveEpochDlpRewards(uint256 epochId, DlpRewards[] calldata dlpRewards) external override nonReentrant whenNotPaused {
+    function saveEpochDlpRewards(uint256 epochId, Rewards[] calldata dlpRewards, bool finalScores) external override nonReentrant whenNotPaused onlyRole(DLP_PERFORMANCE_ROLE) {
+        _createEpochsUntilBlockNumber(block.number);
+
+        if (epochId >= epochsCount && finalScores) {
+            revert EpochNotEnded();
+        }
+
         Epoch storage epoch = _epochs[epochId];
+
+        uint256 totalRewardAmount;
+        for (uint256 i = 0; i < epoch.dlpIds.length(); i++) {
+            totalRewardAmount += epoch.dlps[epoch.dlpIds.at(i)].rewardAmount;
+        }
 
         for (uint256 i = 0; i < dlpRewards.length; i++) {
             uint256 dlpId = dlpRewards[i].dlpId;
@@ -131,14 +156,69 @@ contract VanaEpochImplementation is
             if (epoch.dlpIds.contains(dlpId)) {
                 revert EpochDlpRewardAlreadyAdded(dlpId);
             } else {
+                totalRewardAmount += rewardAmount;
+
+                if (totalRewardAmount > epoch.rewardAmount) {
+                    revert EpochRewardExceeded();
+                }
+
                 epoch.dlpIds.add(dlpId);
                 epoch.dlps[dlpId].rewardAmount = rewardAmount;
+
+                emit EpochDlpRewardAdded(epochId, dlpId, rewardAmount);
             }
+        }
+
+        if (finalScores) {
+            if (totalRewardAmount < epoch.rewardAmount - 1e9) { //1e9 represents calculation error tolerance
+                revert EpochRewardNotDistributed();
+            }
+            epoch.isFinalized = true;
+
+            emit EpochFinalized(epochId);
+        }
+    }
+
+    function forceFinalizedEpoch(uint256 epochId) external override nonReentrant whenNotPaused onlyRole(MAINTAINER_ROLE) {
+        _createEpochsUntilBlockNumber(block.number);
+
+        if (epochId >= epochsCount) {
+            revert EpochNotEnded();
+        }
+
+        Epoch storage epoch = _epochs[epochId];
+
+        epoch.isFinalized = true;
+
+        emit EpochFinalized(epochId);
+    }
+
+    function initializeEpoch(
+        uint256 epochId,
+        uint256 startBlock,
+        uint256 endBlock,
+        uint256 rewardAmount,
+        Rewards[] calldata dlpRewards,
+        bool isFinalized
+    ) public onlyRole(MAINTAINER_ROLE) {
+        Epoch storage epoch = _epochs[epochId];
+
+        epoch.startBlock = startBlock;
+        epoch.endBlock = endBlock;
+        epoch.rewardAmount = rewardAmount;
+        epoch.isFinalized = isFinalized;
+
+        for (uint256 i = 0; i < dlpRewards.length; i++) {
+            uint256 dlpId = dlpRewards[i].dlpId;
+
+            epoch.dlpIds.add(dlpId);
+            epoch.dlps[dlpId].rewardAmount = dlpRewards[i].rewardAmount;
+            epoch.dlps[dlpId].rewardClaimed = dlpRewards[i].rewardAmount;
         }
     }
 
     /**
-     * @notice Creates and finalises epochs up to target block
+     * @notice Creates epochs up to target block
      */
     function _createEpochsUntilBlockNumber(uint256 blockNumber) internal {
         Epoch storage lastEpoch = _epochs[epochsCount];
@@ -170,7 +250,7 @@ contract VanaEpochImplementation is
 //            epoch.startBlock = epochInfo.startBlock;
 //            epoch.endBlock = epochInfo.endBlock;
 //            epoch.rewardAmount = epochInfo.rewardAmount;
-//            epoch.isFinalised = epochInfo.isFinalised;
+//            epoch.isFinalized = epochInfo.isFinalized;
 //
 //            uint256 dlpId;
 //            uint256 epochDlpIdsCount = epochInfo.dlpIds.length;

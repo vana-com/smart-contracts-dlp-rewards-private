@@ -15,8 +15,14 @@ DLPPerformanceStorageV1
     bytes32 public constant MAINTAINER_ROLE = keccak256("MAINTAINER_ROLE");
     bytes32 public constant MANAGER_ROLE = keccak256("MANAGER_ROLE");
 
-    event EpochFinalised(uint256 indexed epochId);
-    event EpochDlpPerformancesSaved(uint256 indexed epochId, uint256 indexed dlpId, uint256 performanceRating);
+    event EpochDlpPerformancesSaved(
+        uint256 indexed epochId,
+        uint256 indexed dlpId,
+        uint256 performanceRating,
+        uint256 tradingVolume,
+        uint256 uniqueContributors,
+        uint256 dataAccessFees
+    );
 
     error EpochAlreadyFinalised();
     error EpochNotEndedYet();
@@ -51,16 +57,6 @@ DLPPerformanceStorageV1
         return 1;
     }
 
-    function epochPerformances(uint256 epochId) external view override returns (EpochPerformanceInfo memory) {
-        EpochPerformance storage epochPerformance = _epochPerformances[epochId];
-
-        return
-            EpochPerformanceInfo({
-                finalized: epochPerformance.finalized
-            });
-
-    }
-
     function epochDlpPerformances(uint256 epochId, uint256 dlpId) external view override returns (EpochDlpPerformanceInfo memory) {
         EpochDlpPerformance storage epochDlpPerformance = _epochPerformances[epochId].epochDlpPerformances[dlpId];
 
@@ -77,6 +73,9 @@ DLPPerformanceStorageV1
         dlpRegistry = IDLPRegistry(dlpRegistryAddress);
     }
 
+    function updateVanaEpoch(address vanaEpochAddress) external override onlyRole(MAINTAINER_ROLE) {
+        vanaEpoch = IVanaEpoch(vanaEpochAddress);
+    }
 
     function pause() external override onlyRole(MAINTAINER_ROLE) {
         _pause();
@@ -89,18 +88,10 @@ DLPPerformanceStorageV1
     function saveEpochPerformances(
         uint256 epochId,
         EpochDlpPerformanceInput[] calldata epochDlpPerformances,
-        bool finalized
+        bool finalScores
     ) external override onlyRole(MANAGER_ROLE) whenNotPaused {
-        if (_epochPerformances[epochId].finalized) {
-            revert EpochAlreadyFinalised();
-        }
-
-        if (finalized) {
-            _epochPerformances[epochId].finalized = true;
-            emit EpochFinalised(epochId);
-        }
-
-        for (uint256 i = 0; i < epochDlpPerformances.length; i++) {
+        uint256 dlpRewardsCount = 0;
+        for (uint256 i = 0; i < epochDlpPerformances.length;) {
             EpochDlpPerformanceInput calldata epochDlpPerformance = epochDlpPerformances[i];
 
             _epochPerformances[epochId].epochDlpPerformances[epochDlpPerformance.dlpId] = EpochDlpPerformance({
@@ -110,7 +101,45 @@ DLPPerformanceStorageV1
                 dataAccessFees: epochDlpPerformance.dataAccessFees
             });
 
-            emit EpochDlpPerformancesSaved(epochId, epochDlpPerformance.dlpId, epochDlpPerformance.totalScore);
+            if (epochDlpPerformance.totalScore > 0) {
+                dlpRewardsCount++;
+            }
+
+
+            emit EpochDlpPerformancesSaved(epochId, epochDlpPerformance.dlpId, epochDlpPerformance.totalScore, epochDlpPerformance.tradingVolume, epochDlpPerformance.uniqueContributors, epochDlpPerformance.dataAccessFees);
+
+            unchecked {
+                ++i;
+            }
         }
+
+        if (dlpRewardsCount == 0) {
+            return;
+        }
+
+        IVanaEpoch.Rewards [] memory dlpRewards = new IVanaEpoch.Rewards[](dlpRewardsCount);
+
+        uint256 epochRewardAmount = vanaEpoch.epochs(epochId).rewardAmount;
+        uint256 rewardIndex = 0;
+        for (uint256 i = 0; i < epochDlpPerformances.length;) {
+            EpochDlpPerformanceInput calldata epochDlpPerformance = epochDlpPerformances[i];
+
+            if (epochDlpPerformance.totalScore > 0) {
+                dlpRewards[rewardIndex] = IVanaEpoch.Rewards({
+                    dlpId: epochDlpPerformance.dlpId,
+                    rewardAmount: epochDlpPerformance.totalScore * epochRewardAmount / 1e18
+                });
+
+                unchecked {
+                    ++rewardIndex;
+                }
+            }
+
+            unchecked {
+                ++i;
+            }
+        }
+
+        vanaEpoch.saveEpochDlpRewards(epochId, dlpRewards, finalScores);
     }
 }

@@ -60,14 +60,18 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   // Get VanaEpoch address from previous deployment
   const vanaEpochAddress = (await deployments.get("VanaEpochProxy")).address;
 
-  // Update DLPPerformance with reference to VanaEpoch - assuming this function exists
-  if (proxy.updateVanaEpoch) {
-    await proxy.connect(deployer).updateVanaEpoch(vanaEpochAddress);
-    console.log(`DLPPerformance updated with VanaEpoch address`);
-  }
+  await proxy.connect(deployer).updateVanaEpoch(vanaEpochAddress);
+  console.log(`DLPPerformance updated with VanaEpoch address`);
 
   console.log(`DLPPerformance proxy address: ${proxyDeploy.proxyAddress}`);
   console.log(`DLPPerformance implementation address: ${proxyDeploy.implementationAddress}`);
+
+  const vanaEpoch = await ethers.getContractAt(
+    "VanaEpochImplementation",
+    vanaEpochAddress
+  );
+
+  await vanaEpoch.connect(deployer).updateDlpPerformance(proxyDeploy.proxyAddress);
 
   await verifyProxy(
     proxyDeploy.proxyAddress,
@@ -80,4 +84,4 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
 };
 
 export default func;
-func.tags = ["DLPPerformanceDeploy"];
+func.tags = ["DLPPerformanceProxy"];

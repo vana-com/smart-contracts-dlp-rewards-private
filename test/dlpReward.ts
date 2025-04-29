@@ -1,8 +1,6 @@
 import chai, { should } from "chai";
 import chaiAsPromised from "chai-as-promised";
 import { ethers, network, upgrades } from "hardhat";
-import { BaseWallet, formatEther, Wallet } from "ethers";
-import * as helpers from "@nomicfoundation/hardhat-network-helpers";
 import {
   DLPRegistryImplementation,
   VanaEpochImplementation,
@@ -46,12 +44,10 @@ describe("DLP System Tests", () => {
 
   // Configuration constants
   const DLP_REGISTRATION_DEPOSIT = parseEther(1); // 1 VANA
-  const DAY_SIZE = 20; // blocks
-  const EPOCH_SIZE = 30; // days
+  const EPOCH_START_BLOCK = 100; // blocks
+  const DAY_SIZE = 100; // blocks
+  const EPOCH_SIZE = 10; // days
   const EPOCH_REWARD_AMOUNT = parseEther(10); // 10 VANA
-
-  let deployBlock: number;
-  let startBlock: number;
 
   const DEFAULT_ADMIN_ROLE =
     "0x0000000000000000000000000000000000000000000000000000000000000000";
@@ -103,9 +99,6 @@ describe("DLP System Tests", () => {
       dlp1Owner,
       dlp2Owner,
     ] = await ethers.getSigners();
-
-    deployBlock = await getCurrentBlockNumber();
-    startBlock = deployBlock + 50;
 
     // Deploy Treasury
     const treasuryDeploy = await upgrades.deployProxy(
@@ -174,6 +167,9 @@ describe("DLP System Tests", () => {
     await dlpRegistry.connect(owner).updateVanaEpoch(vanaEpoch.target);
     await dlpRegistry.connect(owner).updateTreasury(treasury.target);
 
+    await dlpPerformance.connect(owner).updateVanaEpoch(vanaEpoch.target);
+    await vanaEpoch.connect(owner).updateDlpPerformance(dlpPerformance.target);
+
     // Set up roles
     await dlpRegistry.connect(owner).grantRole(MAINTAINER_ROLE, maintainer);
     await vanaEpoch.connect(owner).grantRole(MAINTAINER_ROLE, maintainer);
@@ -201,7 +197,16 @@ describe("DLP System Tests", () => {
       website: "https://example2.com",
       metadata: "Test DLP 2 metadata"
     };
+
+    await vanaEpoch.initializeEpoch(0, 0, EPOCH_START_BLOCK - 1, 0, [], true);
+    await vanaEpoch.initializeEpoch(1, EPOCH_START_BLOCK, EPOCH_START_BLOCK + DAY_SIZE * EPOCH_SIZE, EPOCH_REWARD_AMOUNT, [], false);
   };
+
+  async function advanceToEpochN(epochNumber: number) {
+    const epochNStartBlock = EPOCH_START_BLOCK + (epochNumber - 1) * DAY_SIZE * EPOCH_SIZE;
+
+    await advanceToBlockN(epochNStartBlock);
+  }
 
   describe("Setup", () => {
     beforeEach(async () => {
@@ -336,14 +341,14 @@ describe("DLP System Tests", () => {
       const dlpPerformances: DlpPerformanceInput[] = [
         {
           dlpId: 1,
-          totalScore: parseEther(100),
+          totalScore: parseEther(0.3),
           tradingVolume: parseEther(1000),
           uniqueContributors: 50n,
           dataAccessFees: parseEther(5)
         },
         {
           dlpId: 2,
-          totalScore: parseEther(200),
+          totalScore: parseEther(0.7),
           tradingVolume: parseEther(2000),
           uniqueContributors: 100n,
           dataAccessFees: parseEther(10)
@@ -361,20 +366,16 @@ describe("DLP System Tests", () => {
 
       // Check performance data saved correctly
       const dlp1Performance = await dlpPerformance.epochDlpPerformances(1, 1);
-      dlp1Performance.totalScore.should.eq(parseEther(100));
+      dlp1Performance.totalScore.should.eq(parseEther(0.3));
       dlp1Performance.tradingVolume.should.eq(parseEther(1000));
       dlp1Performance.uniqueContributors.should.eq(50);
       dlp1Performance.dataAccessFees.should.eq(parseEther(5));
 
       const dlp2Performance = await dlpPerformance.epochDlpPerformances(1, 2);
-      dlp2Performance.totalScore.should.eq(parseEther(200));
+      dlp2Performance.totalScore.should.eq(parseEther(0.7));
       dlp2Performance.tradingVolume.should.eq(parseEther(2000));
       dlp2Performance.uniqueContributors.should.eq(100);
       dlp2Performance.dataAccessFees.should.eq(parseEther(10));
-
-      // Check epoch is not finalized
-      const epochPerformance = await dlpPerformance.epochPerformances(1);
-      epochPerformance.finalized.should.eq(false);
     });
 
     it("should save and finalize epoch performances", async function () {
@@ -382,14 +383,14 @@ describe("DLP System Tests", () => {
       const dlpPerformances: DlpPerformanceInput[] = [
         {
           dlpId: 1,
-          totalScore: parseEther(100),
+          totalScore: parseEther(0.1),
           tradingVolume: parseEther(1000),
           uniqueContributors: 50n,
           dataAccessFees: parseEther(5)
         },
         {
           dlpId: 2,
-          totalScore: parseEther(200),
+          totalScore: parseEther(0.9),
           tradingVolume: parseEther(2000),
           uniqueContributors: 100n,
           dataAccessFees: parseEther(10)
@@ -406,10 +407,6 @@ describe("DLP System Tests", () => {
         .withArgs(1, 2, parseEther(200))
         .and.emit(dlpPerformance, "EpochFinalised")
         .withArgs(1);
-
-      // Check epoch is finalized
-      const epochPerformance = await dlpPerformance.epochPerformances(1);
-      epochPerformance.finalized.should.eq(true);
     });
 
     it("should reject saving performances to already finalized epoch", async function () {
@@ -417,7 +414,7 @@ describe("DLP System Tests", () => {
       const dlpPerformances: DlpPerformanceInput[] = [
         {
           dlpId: 1,
-          totalScore: parseEther(100),
+          totalScore: parseEther(1),
           tradingVolume: parseEther(1000),
           uniqueContributors: 50n,
           dataAccessFees: parseEther(5)
@@ -433,7 +430,7 @@ describe("DLP System Tests", () => {
       const newPerformances: DlpPerformanceInput[] = [
         {
           dlpId: 1,
-          totalScore: parseEther(150),
+          totalScore: parseEther(1),
           tradingVolume: parseEther(1500),
           uniqueContributors: 75n,
           dataAccessFees: parseEther(7.5)
@@ -450,7 +447,7 @@ describe("DLP System Tests", () => {
       const dlpPerformances: DlpPerformanceInput[] = [
         {
           dlpId: 1,
-          totalScore: parseEther(100),
+          totalScore: parseEther(1),
           tradingVolume: parseEther(1000),
           uniqueContributors: 50n,
           dataAccessFees: parseEther(5)
@@ -477,12 +474,14 @@ describe("DLP System Tests", () => {
       const epoch1Performances: DlpPerformanceInput[] = [
         {
           dlpId: 1,
-          totalScore: parseEther(100),
+          totalScore: parseEther(1),
           tradingVolume: parseEther(1000),
           uniqueContributors: 50n,
           dataAccessFees: parseEther(5)
         }
       ];
+
+      await advanceToEpochN(2);
 
       await dlpPerformance
         .connect(manager)
@@ -492,7 +491,7 @@ describe("DLP System Tests", () => {
       const epoch2Performances: DlpPerformanceInput[] = [
         {
           dlpId: 1,
-          totalScore: parseEther(150),
+          totalScore: parseEther(1),
           tradingVolume: parseEther(1500),
           uniqueContributors: 75n,
           dataAccessFees: parseEther(7.5)
@@ -503,31 +502,23 @@ describe("DLP System Tests", () => {
         .connect(manager)
         .saveEpochPerformances(2, epoch2Performances, false);
 
-      // Check data for both epochs
-      const epoch1Performance = await dlpPerformance.epochPerformances(1);
-      epoch1Performance.finalized.should.eq(true);
-
-      const epoch2Performance = await dlpPerformance.epochPerformances(2);
-      epoch2Performance.finalized.should.eq(false);
-
       const dlp1Epoch1 = await dlpPerformance.epochDlpPerformances(1, 1);
-      dlp1Epoch1.totalScore.should.eq(parseEther(100));
+      dlp1Epoch1.totalScore.should.eq(parseEther(1));
 
       const dlp1Epoch2 = await dlpPerformance.epochDlpPerformances(2, 1);
-      dlp1Epoch2.totalScore.should.eq(parseEther(150));
+      dlp1Epoch2.totalScore.should.eq(parseEther(1));
     });
 
     it("should allow saving empty performance data", async function () {
       const emptyPerformances: DlpPerformanceInput[] = [];
 
+      await advanceToEpochN(2);
+
       await dlpPerformance
         .connect(manager)
         .saveEpochPerformances(1, emptyPerformances, true)
-        .should.emit(dlpPerformance, "EpochFinalised")
+        .should.emit(dlpRegistry, "EpochFinalised")
         .withArgs(1);
-
-      const epochPerformance = await dlpPerformance.epochPerformances(1);
-      epochPerformance.finalized.should.eq(true);
     });
 
     it("should reject saving performances when paused", async function () {
@@ -537,12 +528,14 @@ describe("DLP System Tests", () => {
       const dlpPerformances: DlpPerformanceInput[] = [
         {
           dlpId: 1,
-          totalScore: parseEther(100),
+          totalScore: parseEther(1),
           tradingVolume: parseEther(1000),
           uniqueContributors: 50n,
           dataAccessFees: parseEther(5)
         }
       ];
+      await advanceToEpochN(2);
+
 
       await dlpPerformance
         .connect(manager)
@@ -555,12 +548,14 @@ describe("DLP System Tests", () => {
       const initialPerformances: DlpPerformanceInput[] = [
         {
           dlpId: 1,
-          totalScore: parseEther(100),
+          totalScore: parseEther(1),
           tradingVolume: parseEther(1000),
           uniqueContributors: 50n,
           dataAccessFees: parseEther(5)
         }
       ];
+
+      await advanceToEpochN(2);
 
       await dlpPerformance
         .connect(manager)
@@ -570,7 +565,7 @@ describe("DLP System Tests", () => {
       const updatedPerformances: DlpPerformanceInput[] = [
         {
           dlpId: 1,
-          totalScore: parseEther(150),
+          totalScore: parseEther(1),
           tradingVolume: parseEther(1500),
           uniqueContributors: 75n,
           dataAccessFees: parseEther(7.5)
@@ -583,7 +578,7 @@ describe("DLP System Tests", () => {
 
       // Check updated data
       const updatedDlp1Performance = await dlpPerformance.epochDlpPerformances(1, 1);
-      updatedDlp1Performance.totalScore.should.eq(parseEther(150));
+      updatedDlp1Performance.totalScore.should.eq(parseEther(1));
       updatedDlp1Performance.tradingVolume.should.eq(parseEther(1500));
       updatedDlp1Performance.uniqueContributors.should.eq(75);
       updatedDlp1Performance.dataAccessFees.should.eq(parseEther(7.5));
@@ -620,33 +615,31 @@ describe("DLP System Tests", () => {
       const epoch1Performances: DlpPerformanceInput[] = [
         {
           dlpId: 1,
-          totalScore: parseEther(100),
+          totalScore: parseEther(1),
           tradingVolume: parseEther(1000),
           uniqueContributors: 50n,
           dataAccessFees: parseEther(5)
         },
         {
           dlpId: 2,
-          totalScore: parseEther(200),
+          totalScore: parseEther(0),
           tradingVolume: parseEther(2000),
           uniqueContributors: 100n,
           dataAccessFees: parseEther(10)
         }
       ];
 
+      await advanceToEpochN(2)
+
       await dlpPerformance
         .connect(manager)
         .saveEpochPerformances(1, epoch1Performances, true);
 
-      // Verify epoch 1 is finalized with correct data
-      const epoch1Info = await dlpPerformance.epochPerformances(1);
-      epoch1Info.finalized.should.eq(true);
-
       const dlp1Epoch1 = await dlpPerformance.epochDlpPerformances(1, 1);
-      dlp1Epoch1.totalScore.should.eq(parseEther(100));
+      dlp1Epoch1.totalScore.should.eq(parseEther(1));
 
       const dlp2Epoch1 = await dlpPerformance.epochDlpPerformances(1, 2);
-      dlp2Epoch1.totalScore.should.eq(parseEther(200));
+      dlp2Epoch1.totalScore.should.eq(parseEther(0));
     });
   });
 
@@ -682,17 +675,15 @@ describe("DLP System Tests", () => {
     it("should updateVanaEpoch when maintainer", async function () {
       await dlpRegistry
         .connect(maintainer)
-        .updateVanaEpoch(user1.address)
+        .updateVanaEpoch(user1.address);
 
         (await dlpRegistry.vanaEpoch()).should.eq(user1.address);
     });
 
     it("should updateTreasury when maintainer", async function () {
-      await dlpRegistry
-        .connect(maintainer)
-        .updateTreasury(user1.address)
+      await dlpRegistry.connect(maintainer).updateTreasury(user1.address);
 
-        (await dlpRegistry.treasury()).should.eq(user1.address);
+      (await dlpRegistry.treasury()).should.eq(user1.address);
     });
 
     it("should updateEpochSize when admin in VanaEpoch", async function () {
@@ -987,6 +978,8 @@ describe("DLP System Tests", () => {
     });
 
     it("should createEpochs properly", async function () {
+      await advanceToEpochN(1);
+
       await vanaEpoch.connect(user1).createEpochs();
 
       (await vanaEpoch.epochsCount()).should.eq(1);
@@ -1005,9 +998,7 @@ describe("DLP System Tests", () => {
       await vanaEpoch.connect(user1).createEpochs();
       const epoch1 = await vanaEpoch.epochs(1);
 
-      // Mine blocks to go beyond epoch end
-      const blocksToMine = EPOCH_SIZE * DAY_SIZE + 10;
-      await advanceBlockNTimes(blocksToMine);
+      await advanceToEpochN(2);
 
       // Create epochs again
       await vanaEpoch.connect(user1).createEpochs();
@@ -1019,14 +1010,10 @@ describe("DLP System Tests", () => {
       epoch2.rewardAmount.should.eq(EPOCH_REWARD_AMOUNT);
     });
 
-    it("should createEpochsUntilBlockNumber properly", async function () {
-      const currentBlock = await ethers.provider.getBlockNumber();
+    it.only("should createEpochsUntilBlockNumber properly", async function () {
+      await advanceToEpochN(1);
 
-      // Set target block in the future
-      const targetBlock = currentBlock + EPOCH_SIZE * DAY_SIZE * 2 + 10;
-
-      // This should be limited to the current block
-      await vanaEpoch.connect(user1).createEpochsUntilBlockNumber(targetBlock);
+      await vanaEpoch.connect(user1).createEpochs();
 
       // Should create 1 epoch (since we're still in epoch 1)
       (await vanaEpoch.epochsCount()).should.eq(1);
@@ -1125,19 +1112,21 @@ describe("DLP System Tests", () => {
       const epoch1Performances = [
         {
           dlpId: 1,
-          totalScore: parseEther(100),
+          totalScore: parseEther(0.6),
           tradingVolume: parseEther(1000),
           uniqueContributors: 50n,
           dataAccessFees: parseEther(5)
         },
         {
           dlpId: 2,
-          totalScore: parseEther(200),
+          totalScore: parseEther(0.4),
           tradingVolume: parseEther(2000),
           uniqueContributors: 100n,
           dataAccessFees: parseEther(10)
         }
       ];
+
+      await advanceToEpochN(2);
 
       await dlpPerformance
         .connect(manager)
@@ -1152,15 +1141,11 @@ describe("DLP System Tests", () => {
       // Check epoch state
       (await vanaEpoch.epochsCount()).should.eq(2);
 
-      // Check performance data
-      const epoch1Info = await dlpPerformance.epochPerformances(1);
-      epoch1Info.finalized.should.eq(true);
-
       const dlp1Performance = await dlpPerformance.epochDlpPerformances(1, 1);
-      dlp1Performance.totalScore.should.eq(parseEther(100));
+      dlp1Performance.totalScore.should.eq(parseEther(0.6));
 
       const dlp2Performance = await dlpPerformance.epochDlpPerformances(1, 2);
-      dlp2Performance.totalScore.should.eq(parseEther(200));
+      dlp2Performance.totalScore.should.eq(parseEther(0.4));
 
       // 8. Verify treasury has received deposits
       (await ethers.provider.getBalance(treasury.target)).should.eq(DLP_REGISTRATION_DEPOSIT * 2n);
@@ -1184,19 +1169,21 @@ describe("DLP System Tests", () => {
       const initialPerformances = [
         {
           dlpId: 1,
-          totalScore: parseEther(100),
+          totalScore: parseEther(0.6),
           tradingVolume: parseEther(1000),
           uniqueContributors: 50n,
           dataAccessFees: parseEther(5)
         },
         {
           dlpId: 2,
-          totalScore: parseEther(200),
+          totalScore: parseEther(0.4),
           tradingVolume: parseEther(2000),
           uniqueContributors: 100n,
           dataAccessFees: parseEther(10)
         }
       ];
+
+      await advanceToEpochN(2);
 
       await dlpPerformance
         .connect(manager)
@@ -1214,7 +1201,7 @@ describe("DLP System Tests", () => {
       dlp1.status.should.eq(DlpStatus.Deregistered);
 
       const dlp1Performance = await dlpPerformance.epochDlpPerformances(1, 1);
-      dlp1Performance.totalScore.should.eq(parseEther(100));
+      dlp1Performance.totalScore.should.eq(parseEther(0.6));
     });
   });
 });

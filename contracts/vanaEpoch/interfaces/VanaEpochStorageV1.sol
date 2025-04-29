@@ -13,4 +13,6 @@ abstract contract VanaEpochStorageV1 is IVanaEpoch {
     // Epoch tracking
     uint256 public override epochsCount;
     mapping(uint256 epochId => Epoch epoch) internal _epochs;
+
+    IDLPPerformance public override dlpPerformance;
 }
