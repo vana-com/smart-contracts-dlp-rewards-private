@@ -362,16 +362,16 @@ contract DLPRegistryImplementation is
             dlp.iconUrl = dlpInfo.iconUrl;
             dlp.website = dlpInfo.website;
             dlp.metadata = dlpInfo.metadata;
-            dlp.status = DlpStatus(uint256(dlpInfo.status));
+            dlp.status = DlpStatus.Registered;
             dlp.registrationBlockNumber = dlpInfo.registrationBlockNumber;
-            dlp.isVerified = dlpInfo.isVerified;
+//            dlp.isVerified = dlpInfo.isVerified;
 
             dlpIds[dlpInfo.dlpAddress] = dlpId;
             dlpNameToId[dlpInfo.name] = dlpId;
 
-            if (DlpStatus(uint256(dlpInfo.status)) == DlpStatus.Eligible) {
-                _eligibleDlpsList.add(dlpId);
-            }
+//            if (DlpStatus(uint256(dlpInfo.status)) == DlpStatus.Eligible) {
+//                _eligibleDlpsList.add(dlpId);
+//            }
 
             emit DlpRegistered(
                 dlpId,
