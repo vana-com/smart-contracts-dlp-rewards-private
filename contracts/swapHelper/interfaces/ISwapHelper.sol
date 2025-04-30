@@ -1,10 +1,18 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.24;
+pragma solidity 0.8.26;
 
 import "@uniswap/v3-periphery/contracts/interfaces/IQuoterV2.sol";
+import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 import "./IWVANA.sol";
 
 interface ISwapHelper {
+    error SwapHelper__InvalidAmountIn();
+    error SwapHelper__InvalidSlippagePercentage();
+    error Uniswap__AS();
+    error Uniswap__SPL();
+    
+    function version() external view returns (uint256);
+
     function WVANA() external view returns (IWVANA);
 
     function uniswapV3Router() external view returns (address);
@@ -16,6 +24,8 @@ interface ISwapHelper {
     function updateUniswapV3Router(address newUniswapV3Router) external;
 
     function updateUniswapV3Quoter(IQuoterV2 newUniswapV3Quoter) external;
+
+    function getPool(address tokenA, address tokenB, uint24 fee) external view returns (IUniswapV3Pool pool);
 
     struct ExactInputSingleParams {
         address tokenIn;
@@ -65,14 +75,24 @@ interface ISwapHelper {
         address tokenOut;
         uint24 fee;
         uint256 amountIn;
+        uint160 sqrtPriceX96;
+        uint128 liquidity;
         uint256 maximumSlippagePercentage;
+    }
+
+    struct Quote {
+        int256 amount0Delta;
+        int256 amount1Delta;
+        uint256 amountToPay;
+        uint256 amountReceived;
+        uint160 sqrtPriceX96After;
+        uint160 sqrtPriceLimitX96;
     }
 
     /// @notice Returns the as much as possible `amountInUsed` and `amountOut` while maintaining a maximum price slippage.
     /// @param params The parameters for the quote.
-    /// @return amountInUsed The amount of tokenIn used for the swap.
-    /// @return amountOut The amount of tokenOut received from the swap.
+    /// @return quote The quote object containing the amounts and price after the swap.
     function quoteSlippageExactInputSingle(
         QuoteSlippageExactInputSingleParams calldata params
-    ) external returns (uint256 amountInUsed, uint256 amountOut);
+    ) external returns (Quote memory quote);
 }
