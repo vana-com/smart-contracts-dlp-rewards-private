@@ -562,7 +562,7 @@ contract DLPRewardSwapImplementation is
             amountIn == usedVanaAmount + spareVana + unusedVanaAmountForReward,
             DLPRewardSwap__AmountMismatch(amountIn, usedVanaAmount, spareVana, unusedVanaAmountForReward)
         );
-// 7398780076610888n lpSwap
+
         emit Reward(
             msg.sender,
             params.recipient,
