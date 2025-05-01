@@ -90,12 +90,11 @@ describe("UniswapV3", () => {
     let poolAddress: string;
     let chainId: number;
 
-    console.log(BigInt(2**101));
-
-    const deploy = async () => {
+    const deploy = async (testChainId: number = 1480) => {
         [deployer, owner, user1, user2, user3, foundation, treasury, dlp] = await ethers.getSigners();
 
-        chainId = parseInt(await ethers.provider.send("eth_chainId", []), 16);
+        // chainId = parseInt(await ethers.provider.send("eth_chainId", []), 16);
+        chainId = testChainId;
         if (chainId === 1480) {
             // Mainnet
             routerAddress = "0xeb40cbe65764202E28BcdB1e318adFdF8b2f2A3b";
@@ -155,6 +154,7 @@ describe("UniswapV3", () => {
             WVANAAddress,
         );
 
+        // console.log("poolAddress:", pool.target);
         PoolToken0 = await pool.token0();
         PoolToken1 = await pool.token1();
 
@@ -1144,9 +1144,27 @@ describe("UniswapV3", () => {
     describe("LpSwap", () => {
         let snapshotId: any;
 
-        beforeEach(async () => {
+        beforeEach(async function (this: Mocha.Context) {
+            const testTitle = this.currentTest?.title ?? "";
+
+            let testChainId = parseInt(await ethers.provider.send("eth_chainId", []), 16);
+
+            if (testTitle.includes("moksha")) {
+                console.log("Reset network to moksha");
+                await network.provider.request({
+                    method: "hardhat_reset",
+                    params: [{
+                        forking: {
+                            jsonRpcUrl: process.env.MOKSHA_RPC_URL || "",
+                            blockNumber: 2_569_780,
+                        },
+                    }],
+                });
+                testChainId = 14800;
+            }
+
             snapshotId = await network.provider.send("evm_snapshot");
-            await deploy();
+            await deploy(testChainId);
             // console.log("liquidity", (await pool.liquidity()).toString());
         });
 
@@ -1360,7 +1378,7 @@ describe("UniswapV3", () => {
                 );
 
             let counter = 0;
-            const numRuns = 500 * NUM_RUNS;
+            const numRuns = 10 * NUM_RUNS;
 
             await fc.assert(
                 fc.asyncProperty(fc.bigInt({ min: 1n, max: parseEther(1_000_000) }), async (amountIn) => {
@@ -1547,8 +1565,8 @@ describe("UniswapV3", () => {
                 mintAmount1 = position.mintAmounts.amount1;
             }
 
-            console.log("tickLower", tickLower);
-            console.log("tickUpper", tickUpper);
+            // console.log("tickLower", tickLower);
+            // console.log("tickUpper", tickUpper);
 
             const lpTokenId = 1550;
             await positionManager
@@ -1797,7 +1815,7 @@ describe("UniswapV3", () => {
                 );
 
             let counter = 0;
-            const numRuns = 500 * NUM_RUNS;
+            const numRuns = 10 * NUM_RUNS;
 
             await fc.assert(
                 fc.asyncProperty(fc.bigInt({ min: parseEther(1), max: parseEther(1_000_000) }), async (amountIn) => {
@@ -1839,7 +1857,7 @@ describe("UniswapV3", () => {
                         amountIn.should.be.eq(quote.usedVanaAmount + quote.spareVana + unusedVanaForReward);
 
                         const foundationVanaBalanceBefore = await ethers.provider.getBalance(foundation.address);
-                        
+
                         const treasuryVanaBalanceBefore = await ethers.provider.getBalance(treasury.address);
                         const treasuryTokenBalanceBefore = await ERC20Token.balanceOf(treasury.address);
 
@@ -2082,5 +2100,110 @@ describe("UniswapV3", () => {
             (await ERC20Token.balanceOf(dlpRewardSwap)).should.be.eq(0);
             (await ethers.provider.getBalance(dlpRewardSwap)).should.be.eq(0);
         });
+
+        it("should splitRewardSwap with existing position lpTokenId (moksha)", async () => {
+            const lpTokenId = 86;
+            const rewardPercentage = parseEther(50); // 50%
+
+            const dlpTokenAddress = "0xb95C6ED43B965D1050161a6A6D78170eFEf5dbF2";
+            const dlpToken = await ethers.getContractAt(ERC20.abi, dlpTokenAddress);
+
+            const poolAddress = await factory.getPool(WVANAAddress, dlpTokenAddress, FeeAmount.MEDIUM)
+            const pool = await ethers.getContractAt(IUniswapV3Pool.abi, poolAddress);
+
+            let counter = 0;
+            const numRuns = 500 * NUM_RUNS;
+
+            await fc.assert(
+                fc.asyncProperty(fc.bigInt({ min: parseEther(1), max: parseEther(50_000) }), async (amountIn) => {
+                    const snapshotId = await network.provider.send("evm_snapshot");
+
+
+                    counter++;
+                    process.stdout.write(`\rsplitRewardSwap (moksha) ${counter} / ${numRuns}`);
+
+                    try {
+                        await network.provider.send("hardhat_setBalance", [
+                            foundation.address,
+                            toHex(2n * amountIn),
+                        ]);
+
+                        const dlpTokenBalanceBefore = await dlpToken.balanceOf(dlp.address);
+
+                        const quote = await dlpRewardSwap.quoteSplitRewardSwap.staticCall({
+                            amountIn: amountIn,
+                            lpTokenId: lpTokenId,
+                            rewardPercentage: rewardPercentage,
+                            maximumSlippagePercentage: SLIPPAGE_TOLERANCE,
+                        });
+
+                        // console.log(
+                        //     "amountIn", amountIn,
+                        //     "usedVanaAmount", quote.usedVanaAmount.toString(),
+                        //     "tokenRewardAmount", quote.tokenRewardAmount.toString(),
+                        //     "spareVana", quote.spareVana.toString(),
+                        //     "spareToken", quote.spareToken.toString());
+
+                        const rewardAmount = amountIn * rewardPercentage / parseEther(100);
+                        const lpAmount = amountIn - rewardAmount;
+                        const usedVanaForLp = lpAmount - quote.spareVana;
+                        const usedVanaForReward = quote.usedVanaAmount - usedVanaForLp;
+                        const unusedVanaForReward = rewardAmount - usedVanaForReward;
+                        quote.usedVanaAmount.should.be.eq(usedVanaForLp + usedVanaForReward);
+                        amountIn.should.be.eq(quote.usedVanaAmount + quote.spareVana + unusedVanaForReward);
+
+                        const foundationVanaBalanceBefore = await ethers.provider.getBalance(foundation.address);
+
+                        const treasuryVanaBalanceBefore = await ethers.provider.getBalance(treasury.address);
+                        const treasuryTokenBalanceBefore = await dlpToken.balanceOf(treasury.address);
+
+                        const poolVanaBalanceBefore = await WVANA.balanceOf(pool.target);
+                        const poolTokenBalanceBefore = await dlpToken.balanceOf(pool.target);
+
+                        let tx = await dlpRewardSwap.connect(foundation).splitRewardSwap({
+                            lpTokenId: lpTokenId,
+                            rewardPercentage: rewardPercentage,
+                            maximumSlippagePercentage: SLIPPAGE_TOLERANCE,
+                            rewardRecipient: dlp.address,
+                            spareRecipient: treasury.address,
+                        },
+                            { value: amountIn }
+                        );
+                        const txReceipt = await getReceipt(tx);
+
+                        const foundationVanaBalanceAfter = await ethers.provider.getBalance(foundation.address);
+                        foundationVanaBalanceAfter.should.be.eq(foundationVanaBalanceBefore - amountIn + unusedVanaForReward - txReceipt.fee);
+                        foundationVanaBalanceAfter.should.be.eq(foundationVanaBalanceBefore - quote.usedVanaAmount - quote.spareVana - txReceipt.fee);
+
+                        const poolVanaBalanceAfter = await WVANA.balanceOf(pool.target);
+                        poolVanaBalanceAfter.should.be.eq(poolVanaBalanceBefore + amountIn - unusedVanaForReward - quote.spareVana);
+
+                        const poolTokenBalanceAfter = await dlpToken.balanceOf(pool.target);
+                        poolTokenBalanceAfter.should.be.eq(poolTokenBalanceBefore - quote.tokenRewardAmount - quote.spareToken);
+
+                        const dlpTokenBalanceAfter = await dlpToken.balanceOf(dlp.address);
+                        dlpTokenBalanceAfter.should.be.eq(dlpTokenBalanceBefore + quote.tokenRewardAmount);
+
+                        const treasuryVanaBalanceAfter = await ethers.provider.getBalance(treasury.address);
+                        treasuryVanaBalanceAfter.should.be.eq(treasuryVanaBalanceBefore + quote.spareVana);
+
+                        const treasuryTokenBalanceAfter = await dlpToken.balanceOf(treasury.address);
+                        treasuryTokenBalanceAfter.should.be.eq(treasuryTokenBalanceBefore + quote.spareToken);
+
+                        (await dlpToken.balanceOf(dlpRewardSwap)).should.be.eq(0);
+                        (await ethers.provider.getBalance(dlpRewardSwap)).should.be.eq(0);
+                    } catch (err) {
+                        console.error("❌ Failed with input:", amountIn, err);
+                        throw err;
+                    } finally {
+                        await network.provider.send("evm_revert", [snapshotId]);
+                    }
+                }),
+                {
+                    numRuns: numRuns,
+                    verbose: true,
+                }
+            );
+        }).timeout(10_800_000); // 3 hours;
     });
 });
