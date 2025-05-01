@@ -7,7 +7,7 @@ import { Tick, TickMath, Pool, Position, maxLiquidityForAmounts, nearestUsableTi
 import { Token, CurrencyAmount, sqrt } from "@uniswap/sdk-core";
 import JSBI from 'jsbi';
 import { parseEther, getReceipt, toHex, sqrtBigInt } from "../utils/helpers";
-import { SwapHelperImplementation, DLPRewardSwapImplementation } from "../typechain-types";
+import { SwapHelperImplementation, DLPRewardSwapImplementation, DLPRewardSwapTestHelper } from "../typechain-types";
 
 import INonfungiblePositionManager from '@uniswap/v3-periphery/artifacts/contracts/interfaces/INonfungiblePositionManager.sol/INonfungiblePositionManager.json';
 import SwapRouter from '@uniswap/v3-periphery/artifacts/contracts/SwapRouter.sol/SwapRouter.json';
@@ -63,6 +63,7 @@ describe("UniswapV3", () => {
     let user2: HardhatEthersSigner;
     let user3: HardhatEthersSigner;
     let foundation: HardhatEthersSigner;
+    let treasury: HardhatEthersSigner;
     let dlp: HardhatEthersSigner;
 
     let dataDexRouter: any;
@@ -77,7 +78,7 @@ describe("UniswapV3", () => {
     let PoolToken1: any;
 
     let swapHelper: SwapHelperImplementation;
-    let dlpRewardSwap: DLPRewardSwapImplementation;
+    let dlpRewardSwap: DLPRewardSwapTestHelper;
 
     let routerAddress: string;
     let quoterV2Address: string;
@@ -89,8 +90,10 @@ describe("UniswapV3", () => {
     let poolAddress: string;
     let chainId: number;
 
+    console.log(BigInt(2**101));
+
     const deploy = async () => {
-        [deployer, owner, user1, user2, user3, foundation, dlp] = await ethers.getSigners();
+        [deployer, owner, user1, user2, user3, foundation, treasury, dlp] = await ethers.getSigners();
 
         chainId = parseInt(await ethers.provider.send("eth_chainId", []), 16);
         if (chainId === 1480) {
@@ -163,7 +166,7 @@ describe("UniswapV3", () => {
 
         const swapHelperDeploy = await upgrades.deployProxy(
             (await ethers.getContractFactory("SwapHelperImplementation")),
-            [owner.address, WVANAAddress, dataDexRouter.target, dataDexQuoterV2.target],
+            [owner.address, dataDexRouter.target, dataDexQuoterV2.target],
             {
                 kind: "uups",
             },
@@ -175,7 +178,7 @@ describe("UniswapV3", () => {
         );
 
         const dlpRewardSwapDeploy = await upgrades.deployProxy(
-            (await ethers.getContractFactory("DLPRewardSwapImplementation")),
+            (await ethers.getContractFactory("DLPRewardSwapTestHelper")),
             [owner.address, swapHelper.target, positionManager.target],
             {
                 kind: "uups",
@@ -183,7 +186,7 @@ describe("UniswapV3", () => {
         );
 
         dlpRewardSwap = await ethers.getContractAt(
-            "DLPRewardSwapImplementation",
+            "DLPRewardSwapTestHelper",
             dlpRewardSwapDeploy.target,
         );
     };
@@ -1174,9 +1177,9 @@ describe("UniswapV3", () => {
                     const snapshotId = await network.provider.send("evm_snapshot");
 
                     counter1++;
-                    
+
                     try {
-                        const lpQuote = await dlpRewardSwap.quoteLpSwap.staticCall({
+                        const lpQuote = await dlpRewardSwap.callQuoteLpSwap.staticCall({
                             tokenIn: VANA,
                             tokenOut: ERC20Token,
                             fee: FeeAmount.MEDIUM,
@@ -1357,7 +1360,7 @@ describe("UniswapV3", () => {
                 );
 
             let counter = 0;
-            const numRuns = 100 * NUM_RUNS;
+            const numRuns = 500 * NUM_RUNS;
 
             await fc.assert(
                 fc.asyncProperty(fc.bigInt({ min: 1n, max: parseEther(1_000_000) }), async (amountIn) => {
@@ -1372,7 +1375,7 @@ describe("UniswapV3", () => {
                             toHex(2n * amountIn),
                         ]);
 
-                        const lpQuote = await dlpRewardSwap.quoteLpSwap.staticCall({
+                        const lpQuote = await dlpRewardSwap.callQuoteLpSwap.staticCall({
                             tokenIn: VANA,
                             tokenOut: ERC20Token,
                             fee: FeeAmount.MEDIUM,
@@ -1418,7 +1421,7 @@ describe("UniswapV3", () => {
                             );
                             BigInt(liquidityDelta.toString()).should.be.lte(lpQuote.liquidityDelta);
 
-                            const tx = await dlpRewardSwap.connect(user1).lpSwap(
+                            const tx = await dlpRewardSwap.connect(user1).callLpSwap(
                                 {
                                     amountIn: amountIn,
                                     tokenIn: VANA,
@@ -1544,6 +1547,9 @@ describe("UniswapV3", () => {
                 mintAmount1 = position.mintAmounts.amount1;
             }
 
+            console.log("tickLower", tickLower);
+            console.log("tickUpper", tickUpper);
+
             const lpTokenId = 1550;
             await positionManager
                 .connect(user1)
@@ -1588,7 +1594,7 @@ describe("UniswapV3", () => {
             // amountIn = 1270713885215485279559n;
             amountIn = 7398780076610888n;
 
-            const lpQuote = await dlpRewardSwap.quoteLpSwap.staticCall({
+            const lpQuote = await dlpRewardSwap.callQuoteLpSwap.staticCall({
                 tokenIn: VANA,
                 tokenOut: ERC20Token,
                 fee: FeeAmount.MEDIUM,
@@ -1642,7 +1648,7 @@ describe("UniswapV3", () => {
                 // console.log("lpQuote.liquidityDelta", lpQuote.liquidityDelta.toString());
                 BigInt(liquidityDelta.toString()).should.be.lte(lpQuote.liquidityDelta);
 
-                const tx = await dlpRewardSwap.connect(user1).lpSwap(
+                const tx = await dlpRewardSwap.connect(user1).callLpSwap(
                     {
                         amountIn: amountIn,
                         tokenIn: VANA,
@@ -1791,13 +1797,13 @@ describe("UniswapV3", () => {
                 );
 
             let counter = 0;
-            const numRuns = 100 * NUM_RUNS;
+            const numRuns = 500 * NUM_RUNS;
 
             await fc.assert(
                 fc.asyncProperty(fc.bigInt({ min: parseEther(1), max: parseEther(1_000_000) }), async (amountIn) => {
                     const snapshotId = await network.provider.send("evm_snapshot");
 
-                    const rewardPercentage = parseEther(20); // 20%
+                    const rewardPercentage = parseEther(50); // 50%
 
                     counter++;
                     process.stdout.write(`\rsplitRewardSwap ${counter} / ${numRuns}`);
@@ -1833,12 +1839,19 @@ describe("UniswapV3", () => {
                         amountIn.should.be.eq(quote.usedVanaAmount + quote.spareVana + unusedVanaForReward);
 
                         const foundationVanaBalanceBefore = await ethers.provider.getBalance(foundation.address);
+                        
+                        const treasuryVanaBalanceBefore = await ethers.provider.getBalance(treasury.address);
+                        const treasuryTokenBalanceBefore = await ERC20Token.balanceOf(treasury.address);
+
+                        const poolVanaBalanceBefore = await WVANA.balanceOf(pool.target);
+                        const poolTokenBalanceBefore = await ERC20Token.balanceOf(pool.target);
 
                         tx = await dlpRewardSwap.connect(foundation).splitRewardSwap({
                             lpTokenId: lpTokenId,
-                            rewardPercentage: parseEther(20), // 20%
+                            rewardPercentage: rewardPercentage,
                             maximumSlippagePercentage: SLIPPAGE_TOLERANCE,
-                            recipient: dlp.address,
+                            rewardRecipient: dlp.address,
+                            spareRecipient: treasury.address,
                         },
                             { value: amountIn }
                         );
@@ -1848,8 +1861,23 @@ describe("UniswapV3", () => {
                         foundationVanaBalanceAfter.should.be.eq(foundationVanaBalanceBefore - amountIn + unusedVanaForReward - txReceipt.fee);
                         foundationVanaBalanceAfter.should.be.eq(foundationVanaBalanceBefore - quote.usedVanaAmount - quote.spareVana - txReceipt.fee);
 
+                        const poolVanaBalanceAfter = await WVANA.balanceOf(pool.target);
+                        poolVanaBalanceAfter.should.be.eq(poolVanaBalanceBefore + amountIn - unusedVanaForReward - quote.spareVana);
+
+                        const poolTokenBalanceAfter = await ERC20Token.balanceOf(pool.target);
+                        poolTokenBalanceAfter.should.be.eq(poolTokenBalanceBefore - quote.tokenRewardAmount - quote.spareToken);
+
                         const dlpTokenBalanceAfter = await ERC20Token.balanceOf(dlp.address);
-                        quote.tokenRewardAmount.should.be.eq(dlpTokenBalanceAfter - dlpTokenBalanceBefore);
+                        dlpTokenBalanceAfter.should.be.eq(dlpTokenBalanceBefore + quote.tokenRewardAmount);
+
+                        const treasuryVanaBalanceAfter = await ethers.provider.getBalance(treasury.address);
+                        treasuryVanaBalanceAfter.should.be.eq(treasuryVanaBalanceBefore + quote.spareVana);
+
+                        const treasuryTokenBalanceAfter = await ERC20Token.balanceOf(treasury.address);
+                        treasuryTokenBalanceAfter.should.be.eq(treasuryTokenBalanceBefore + quote.spareToken);
+
+                        (await ERC20Token.balanceOf(dlpRewardSwap)).should.be.eq(0);
+                        (await ethers.provider.getBalance(dlpRewardSwap)).should.be.eq(0);
                     } catch (err) {
                         console.error("❌ Failed with input:", amountIn, err);
                         throw err;
@@ -1981,7 +2009,7 @@ describe("UniswapV3", () => {
                     mintAmount1.toString(),
                 );
 
-            const rewardPercentage = parseEther(20); // 20%
+            const rewardPercentage = parseEther(50); // 50%
 
             amountIn = 5646607493091401645215n;
 
@@ -2016,11 +2044,18 @@ describe("UniswapV3", () => {
 
             const foundationVanaBalanceBefore = await ethers.provider.getBalance(foundation.address);
 
+            const treasuryVanaBalanceBefore = await ethers.provider.getBalance(treasury.address);
+            const treasuryTokenBalanceBefore = await ERC20Token.balanceOf(treasury.address);
+
+            const poolVanaBalanceBefore = await WVANA.balanceOf(pool.target);
+            const poolTokenBalanceBefore = await ERC20Token.balanceOf(pool.target);
+
             tx = await dlpRewardSwap.connect(foundation).splitRewardSwap({
                 lpTokenId: lpTokenId,
-                rewardPercentage: parseEther(20), // 20%
+                rewardPercentage: rewardPercentage,
                 maximumSlippagePercentage: SLIPPAGE_TOLERANCE,
-                recipient: dlp.address,
+                rewardRecipient: dlp.address,
+                spareRecipient: treasury.address,
             },
                 { value: amountIn });
             txReceipt = await getReceipt(tx);
@@ -2029,8 +2064,23 @@ describe("UniswapV3", () => {
             foundationVanaBalanceAfter.should.be.eq(foundationVanaBalanceBefore - amountIn + unusedVanaForReward - txReceipt.fee);
             foundationVanaBalanceAfter.should.be.eq(foundationVanaBalanceBefore - quote.usedVanaAmount - quote.spareVana - txReceipt.fee);
 
+            const poolVanaBalanceAfter = await WVANA.balanceOf(pool.target);
+            poolVanaBalanceAfter.should.be.eq(poolVanaBalanceBefore + amountIn - unusedVanaForReward - quote.spareVana);
+
+            const poolTokenBalanceAfter = await ERC20Token.balanceOf(pool.target);
+            poolTokenBalanceAfter.should.be.eq(poolTokenBalanceBefore - quote.tokenRewardAmount - quote.spareToken);
+
             const dlpTokenBalanceAfter = await ERC20Token.balanceOf(dlp.address);
-            quote.tokenRewardAmount.should.be.eq(dlpTokenBalanceAfter - dlpTokenBalanceBefore);
+            dlpTokenBalanceAfter.should.be.eq(dlpTokenBalanceBefore + quote.tokenRewardAmount);
+
+            const treasuryVanaBalanceAfter = await ethers.provider.getBalance(treasury.address);
+            treasuryVanaBalanceAfter.should.be.eq(treasuryVanaBalanceBefore + quote.spareVana);
+
+            const treasuryTokenBalanceAfter = await ERC20Token.balanceOf(treasury.address);
+            treasuryTokenBalanceAfter.should.be.eq(treasuryTokenBalanceBefore + quote.spareToken);
+
+            (await ERC20Token.balanceOf(dlpRewardSwap)).should.be.eq(0);
+            (await ethers.provider.getBalance(dlpRewardSwap)).should.be.eq(0);
         });
     });
 });

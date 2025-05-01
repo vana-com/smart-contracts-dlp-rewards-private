@@ -41,15 +41,21 @@ contract SwapHelperImplementation is UUPSUpgradeable, AccessControlUpgradeable, 
     /// @notice Initializes the contract
     function initialize(
         address ownerAddress,
-        IWVANA initWVANA,
         address initUniswapV3Router,
         IQuoterV2 initUniswapV3Quoter
     ) external initializer {
         __UUPSUpgradeable_init();
         __AccessControl_init();
 
-        WVANA = initWVANA;
-        uniswapV3Router = initUniswapV3Router;
+        require(ownerAddress != address(0), SwapHelper__ZeroAddress());
+
+        /// @dev We allow the initial UniswapV3Router to be zero address
+        /// to have the same SwapHelper address for all networks (because
+        /// UniswapV3Router addresses are different on mainnet and Moksha).
+        if (initUniswapV3Router != address(0)) {
+            uniswapV3Router = initUniswapV3Router;
+            WVANA = IWVANA(IPeripheryImmutableState(uniswapV3Router).WETH9());
+        }
         uniswapV3Quoter = initUniswapV3Quoter;
 
         _setRoleAdmin(MAINTAINER_ROLE, DEFAULT_ADMIN_ROLE);
@@ -66,15 +72,14 @@ contract SwapHelperImplementation is UUPSUpgradeable, AccessControlUpgradeable, 
         return 1;
     }
 
-    function updateWVANA(IWVANA newWVANA) external onlyRole(MAINTAINER_ROLE) {
-        WVANA = newWVANA;
-    }
-
     function updateUniswapV3Router(address newUniswapV3Router) external onlyRole(MAINTAINER_ROLE) {
+        if (newUniswapV3Router == address(0)) revert SwapHelper__ZeroAddress();
         uniswapV3Router = newUniswapV3Router;
+        WVANA = IWVANA(IPeripheryImmutableState(uniswapV3Router).WETH9());
     }
 
     function updateUniswapV3Quoter(IQuoterV2 newUniswapV3Quoter) external onlyRole(MAINTAINER_ROLE) {
+        if (address(newUniswapV3Quoter) == address(0)) revert SwapHelper__ZeroAddress();
         uniswapV3Quoter = newUniswapV3Quoter;
     }
 
@@ -94,6 +99,8 @@ contract SwapHelperImplementation is UUPSUpgradeable, AccessControlUpgradeable, 
         ExactInputSingleParams memory params,
         uint160 sqrtPriceLimitX96
     ) internal returns (uint256 amountInUsed, uint256 amountOut) {
+        require(params.recipient != address(0), SwapHelper__ZeroAddress());
+
         bool isVANATokenIn = params.tokenIn == VANA;
 
         // Transfer tokenIn from the caller to this contract
@@ -113,7 +120,7 @@ contract SwapHelperImplementation is UUPSUpgradeable, AccessControlUpgradeable, 
         address recipient = isVANATokenOut ? address(this) : params.recipient;
 
         // Approve the Uniswap router to spend tokenIn
-        IERC20(tokenIn).approve(address(uniswapV3Router), params.amountIn);
+        IERC20(tokenIn).approve(uniswapV3Router, params.amountIn);
 
         uint256 tokenInBalanceBefore = IERC20(tokenIn).balanceOf(address(this));
 

@@ -41,8 +41,9 @@ const config: HardhatUserConfig = {
       chainId: 1480,
       forking: {
         url: process.env.VANA_RPC_URL || "",
-        // url: process.env.MOKSHA_RPC_URL || "",
         blockNumber: 2_500_000,
+        // url: process.env.MOKSHA_RPC_URL || "",
+        // blockNumber: 2_565_670,
       },
       chains: {
         1480: {
@@ -66,13 +67,13 @@ const config: HardhatUserConfig = {
       allowUnlimitedContractSize: true,
     },
     moksha: {
-      allowUnlimitedContractSize: true,
       url: process.env.MOKSHA_RPC_URL || "",
       chainId: 14800,
       accounts:
         process.env.DEPLOYER_PRIVATE_KEY !== undefined
           ? [process.env.DEPLOYER_PRIVATE_KEY]
           : [],
+      allowUnlimitedContractSize: true,
     },
   },
   etherscan: {

@@ -8,6 +8,7 @@ import "./IWVANA.sol";
 interface ISwapHelper {
     error SwapHelper__InvalidAmountIn();
     error SwapHelper__InvalidSlippagePercentage();
+    error SwapHelper__ZeroAddress();
     error Uniswap__AS();
     error Uniswap__SPL();
     
@@ -18,8 +19,6 @@ interface ISwapHelper {
     function uniswapV3Router() external view returns (address);
 
     function uniswapV3Quoter() external view returns (IQuoterV2);
-
-    function updateWVANA(IWVANA newWVANA) external;
 
     function updateUniswapV3Router(address newUniswapV3Router) external;
 

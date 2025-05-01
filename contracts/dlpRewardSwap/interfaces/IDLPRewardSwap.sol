@@ -77,8 +77,6 @@ interface IDLPRewardSwap {
         uint160 sqrtPriceX96After;
     }
 
-    function quoteLpSwap(QuoteLpSwapParams memory params) external returns (LpSwapQuote memory result);
-
     struct LpSwapParams {
         uint256 amountIn;
         address tokenIn;
@@ -88,15 +86,12 @@ interface IDLPRewardSwap {
         uint256 lpTokenId;
     }
 
-    function lpSwap(
-        LpSwapParams memory params
-    ) external payable returns (uint128 liquidity, uint256 spareIn, uint256 spareOut);
-
     struct SplitRewardSwapParams {
         uint256 lpTokenId;
         uint256 rewardPercentage;
         uint256 maximumSlippagePercentage;
-        address recipient;
+        address rewardRecipient;
+        address spareRecipient;
     }
 
     function splitRewardSwap(

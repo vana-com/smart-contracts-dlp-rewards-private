@@ -5,6 +5,7 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Address} from "@openzeppelin/contracts/utils/Address.sol";
 import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 import "../swapHelper/libraries/SqrtPriceMath.sol";
@@ -20,6 +21,7 @@ contract DLPRewardSwapImplementation is
     DLPRewardSwapStorageV1
 {
     using Address for address payable;
+    using SafeERC20 for IERC20;
 
     bytes32 public constant MAINTAINER_ROLE = keccak256("MAINTAINER_ROLE");
     address public constant VANA = address(0);
@@ -98,7 +100,7 @@ contract DLPRewardSwapImplementation is
         }
     }
 
-    function quoteLpSwap(QuoteLpSwapParams memory params) public override returns (LpSwapQuote memory res) {
+    function quoteLpSwap(QuoteLpSwapParams memory params) internal returns (LpSwapQuote memory res) {
         require(params.amountIn > 0, DLPRewardSwap__ZeroAmount());
         require(params.tokenOut != address(0), DLPRewardSwap__ZeroAddress());
         require(params.sqrtRatioLowerX96 <= params.sqrtRatioUpperX96, DLPRewardSwap__InvalidRange());
@@ -389,7 +391,7 @@ contract DLPRewardSwapImplementation is
 
     function lpSwap(
         LpSwapParams memory params
-    ) public payable override returns (uint128 liquidityDelta, uint256 spareIn, uint256 spareOut) {
+    ) internal returns (uint128 liquidityDelta, uint256 spareIn, uint256 spareOut) {
         require(params.amountIn > 0, DLPRewardSwap__ZeroAmount());
         if (params.tokenIn == VANA) {
             require(msg.value >= params.amountIn, DLPRewardSwap__InsufficientAmount(VANA, params.amountIn, msg.value));
@@ -499,6 +501,10 @@ contract DLPRewardSwapImplementation is
             spareOut == quote.spareOut,
             DLPRewardSwap__SpareAmountMismatch(params.tokenOut, quote.spareOut, spareOut)
         );
+
+        if (params.tokenIn == VANA && spareIn > 0) {
+            WVANA.withdraw(spareIn);
+        }
     }
 
     function splitRewardSwap(
@@ -514,6 +520,8 @@ contract DLPRewardSwapImplementation is
         require(amountIn > 0, DLPRewardSwap__ZeroAmount());
         require(params.rewardPercentage <= ONE_HUNDRED_PERCENT, DLPRewardSwap__InvalidRewardPercentage());
         require(params.maximumSlippagePercentage <= ONE_HUNDRED_PERCENT, DLPRewardSwap__InvalidSlippagePercentage());
+        require(params.rewardRecipient != address(0), DLPRewardSwap__ZeroAddress());
+        require(params.spareRecipient != address(0), DLPRewardSwap__ZeroAddress());
 
         (, , address token0, address token1, uint24 fee, , , , , , , ) = positionManager.positions(params.lpTokenId);
         IWVANA WVANA = swapHelper.WVANA();
@@ -540,7 +548,13 @@ contract DLPRewardSwapImplementation is
         );
         uint256 usedVanaAmountForLp = lpAmount - spareVana;
 
-        /// @dev TODO: Should we send the spare Vana and spare token to the recipient?
+        /// @dev Send spare tokens to the recipient
+        if (spareVana > 0) {
+            payable(params.spareRecipient).sendValue(spareVana);
+        }
+        if (spareToken > 0) {
+            IERC20(dlpToken).safeTransfer(params.spareRecipient, spareToken);
+        }
 
         /// @dev Swap VANA reward to dlpToken
         uint256 usedVanaAmountForReward;
@@ -549,7 +563,7 @@ contract DLPRewardSwapImplementation is
                 tokenIn: VANA,
                 tokenOut: dlpToken,
                 fee: fee,
-                recipient: params.recipient,
+                recipient: params.rewardRecipient,
                 amountIn: rewardAmount,
                 maximumSlippagePercentage: params.maximumSlippagePercentage
             })
@@ -565,7 +579,7 @@ contract DLPRewardSwapImplementation is
 
         emit Reward(
             msg.sender,
-            params.recipient,
+            params.rewardRecipient,
             dlpToken,
             usedVanaAmountForReward,
             tokenRewardAmount,
