@@ -24,7 +24,6 @@ DLPPerformanceStorageV1
         uint256 dataAccessFees
     );
 
-    error EpochAlreadyFinalised();
     error EpochNotEndedYet();
     error InvalidEpoch();
     error EpochRewardsAlreadyDistributed();

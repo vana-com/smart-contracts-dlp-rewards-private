@@ -138,7 +138,7 @@ contract VanaEpochImplementation is
     function saveEpochDlpRewards(uint256 epochId, Rewards[] calldata dlpRewards, bool finalScores) external override nonReentrant whenNotPaused onlyRole(DLP_PERFORMANCE_ROLE) {
         _createEpochsUntilBlockNumber(block.number);
 
-        if (epochId >= epochsCount && finalScores) {
+        if (epochId >= epochsCount) {
             revert EpochNotEnded();
         }
 
@@ -279,4 +279,8 @@ contract VanaEpochImplementation is
 //            }
 //        }
 //    }
+
+    function updateDaySize(uint256 newDaySize) external onlyRole(MAINTAINER_ROLE) {
+        daySize = newDaySize;
+    }
 }
