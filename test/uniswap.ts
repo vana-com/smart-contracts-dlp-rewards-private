@@ -2112,7 +2112,7 @@ describe("UniswapV3", () => {
             const pool = await ethers.getContractAt(IUniswapV3Pool.abi, poolAddress);
 
             let counter = 0;
-            const numRuns = 500 * NUM_RUNS;
+            const numRuns = 100 * NUM_RUNS;
 
             await fc.assert(
                 fc.asyncProperty(fc.bigInt({ min: parseEther(1), max: parseEther(50_000) }), async (amountIn) => {

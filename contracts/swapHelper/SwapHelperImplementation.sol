@@ -120,7 +120,7 @@ contract SwapHelperImplementation is UUPSUpgradeable, AccessControlUpgradeable, 
         address recipient = isVANATokenOut ? address(this) : params.recipient;
 
         // Approve the Uniswap router to spend tokenIn
-        IERC20(tokenIn).approve(uniswapV3Router, params.amountIn);
+        IERC20(tokenIn).forceApprove(uniswapV3Router, params.amountIn);
 
         uint256 tokenInBalanceBefore = IERC20(tokenIn).balanceOf(address(this));
 
@@ -162,7 +162,7 @@ contract SwapHelperImplementation is UUPSUpgradeable, AccessControlUpgradeable, 
     function exactInputSingle(
         ExactInputSingleParams calldata params
     ) external payable override returns (uint256 amountOut) {
-        (amountOut, ) = _exactInputSingle(params, 0);
+        (, amountOut) = _exactInputSingle(params, 0);
     }
 
     function _getSqrtPriceLimitX96(

@@ -56,7 +56,10 @@ contract DLPRewardSwapImplementation is
     /// @notice Upgrades the contract to a new implementation
     /// @param newImplementation The address of the new implementation
     /// @dev This function is called by the UUPS proxy to authorize upgrades
-    function _authorizeUpgrade(address newImplementation) internal virtual override onlyRole(DEFAULT_ADMIN_ROLE) {}
+    function _authorizeUpgrade(address newImplementation) internal virtual override onlyRole(DEFAULT_ADMIN_ROLE) {
+        /// @dev Access control is handled by the onlyRole modifier
+        /// No additional validation needed
+    }
 
     function version() external pure virtual override returns (uint256) {
         return 1;
@@ -458,8 +461,8 @@ contract DLPRewardSwapImplementation is
             DLPRewardSwap__InsufficientAmount(token1, amount1Desired, token1Balance)
         );
 
-        IERC20(token0).approve(address(positionManager), amount0Desired);
-        IERC20(token1).approve(address(positionManager), amount1Desired);
+        IERC20(token0).forceApprove(address(positionManager), amount0Desired);
+        IERC20(token1).forceApprove(address(positionManager), amount1Desired);
 
         IUniswapV3Pool pool = swapHelper.getPool(tokenIn, tokenOut, params.fee);
         (uint160 currentSqrtPriceX96, , , , , , ) = pool.slot0();
@@ -514,6 +517,7 @@ contract DLPRewardSwapImplementation is
         payable
         override
         nonReentrant
+        whenNotPaused
         returns (uint256 tokenRewardAmount, uint256 spareToken, uint256 spareVana, uint256 usedVanaAmount)
     {
         uint256 amountIn = msg.value;
