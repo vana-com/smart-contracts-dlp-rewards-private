@@ -54,6 +54,7 @@ describe("UniswapV3", () => {
     const VANA = ethers.ZeroAddress
 
     const NUM_RUNS = 500;
+    const RUN_FACTOR = 50;
 
     const SLIPPAGE_TOLERANCE = parseEther(2); // 2%
 
@@ -1378,7 +1379,7 @@ describe("UniswapV3", () => {
                 );
 
             let counter = 0;
-            const numRuns = 10 * NUM_RUNS;
+            const numRuns = RUN_FACTOR * NUM_RUNS;
 
             await fc.assert(
                 fc.asyncProperty(fc.bigInt({ min: 1n, max: parseEther(1_000_000) }), async (amountIn) => {
@@ -1815,7 +1816,7 @@ describe("UniswapV3", () => {
                 );
 
             let counter = 0;
-            const numRuns = 10 * NUM_RUNS;
+            const numRuns = RUN_FACTOR * NUM_RUNS;
 
             await fc.assert(
                 fc.asyncProperty(fc.bigInt({ min: parseEther(1), max: parseEther(1_000_000) }), async (amountIn) => {
