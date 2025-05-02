@@ -6,12 +6,21 @@ import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 import "./IWVANA.sol";
 
 interface ISwapHelper {
+    event Swap(
+        address indexed sender,
+        address indexed recipient,
+        address indexed tokenIn,
+        uint256 amountIn,
+        address tokenOut,
+        uint256 amountOut
+    );
+
     error SwapHelper__InvalidAmountIn();
     error SwapHelper__InvalidSlippagePercentage();
     error SwapHelper__ZeroAddress();
     error Uniswap__AS();
     error Uniswap__SPL();
-    
+
     function version() external view returns (uint256);
 
     function WVANA() external view returns (IWVANA);

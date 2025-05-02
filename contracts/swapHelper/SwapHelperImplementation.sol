@@ -139,6 +139,8 @@ contract SwapHelperImplementation is UUPSUpgradeable, AccessControlUpgradeable, 
         uint256 tokenInBalanceAfter = IERC20(tokenIn).balanceOf(address(this));
         amountInUsed = tokenInBalanceBefore - tokenInBalanceAfter;
 
+        emit Swap(msg.sender, params.recipient, tokenIn, amountInUsed, tokenOut, amountOut);
+
         if (amountInUsed < params.amountIn) {
             uint256 amountInLeft = params.amountIn - amountInUsed;
             // Refund the remaining tokenIn to the caller

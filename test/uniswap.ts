@@ -7,7 +7,7 @@ import { Tick, TickMath, Pool, Position, maxLiquidityForAmounts, nearestUsableTi
 import { Token, CurrencyAmount, sqrt } from "@uniswap/sdk-core";
 import JSBI from 'jsbi';
 import { parseEther, getReceipt, toHex, sqrtBigInt } from "../utils/helpers";
-import { SwapHelperImplementation, DLPRewardSwapImplementation, DLPRewardSwapTestHelper } from "../typechain-types";
+import { SwapHelperImplementation, DLPRewardSwapTestHelper } from "../typechain-types";
 
 import INonfungiblePositionManager from '@uniswap/v3-periphery/artifacts/contracts/interfaces/INonfungiblePositionManager.sol/INonfungiblePositionManager.json';
 import SwapRouter from '@uniswap/v3-periphery/artifacts/contracts/SwapRouter.sol/SwapRouter.json';
@@ -1157,7 +1157,7 @@ describe("UniswapV3", () => {
                     params: [{
                         forking: {
                             jsonRpcUrl: process.env.MOKSHA_RPC_URL || "",
-                            blockNumber: 2_569_780,
+                            blockNumber: 2_580_450,
                         },
                     }],
                 });
@@ -2206,5 +2206,28 @@ describe("UniswapV3", () => {
                 }
             );
         }).timeout(10_800_000); // 3 hours;
+
+        it("should quoteExactInputSingle on moksha", async () => {
+            const dlpTokenAddress = "0xb95C6ED43B965D1050161a6A6D78170eFEf5dbF2";
+            const dlpToken = await ethers.getContractAt(ERC20.abi, dlpTokenAddress);
+
+            const amountIn = parseEther(1_000_000);
+
+            const quoteV2 = await dataDexQuoterV2.quoteExactInputSingle.staticCall({
+                tokenIn: dlpTokenAddress,
+                tokenOut: WVANAAddress,
+                fee: FeeAmount.MEDIUM,
+                amountIn: amountIn,
+                sqrtPriceLimitX96: 0,
+            });
+
+            const amountOut = await swapHelper.quoteExactInputSingle.staticCall({
+                tokenIn: dlpTokenAddress,
+                tokenOut: WVANAAddress,
+                fee: FeeAmount.MEDIUM,
+                amountIn: amountIn,
+            });
+            amountOut.should.be.eq(quoteV2.amountOut);
+        });
     });
 });
