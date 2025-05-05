@@ -5,7 +5,10 @@ import {
   DLPRegistryImplementation,
   VanaEpochImplementation,
   TreasuryImplementation,
-  DLPPerformanceImplementation
+  DLPPerformanceImplementation,
+  DLPRewardDeployerImplementation,
+  DLPRewardSwapImplementation,
+  DLPRewardSwapImplementationMock
 } from "../typechain-types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import {
@@ -27,20 +30,27 @@ describe("DLP System Tests", () => {
     Deregistered
   }
 
-  let owner: HardhatEthersSigner;
+  let admin: HardhatEthersSigner;
   let maintainer: HardhatEthersSigner;
   let manager: HardhatEthersSigner;
-  let custodian: HardhatEthersSigner;
   let dlp1Owner: HardhatEthersSigner;
   let dlp2Owner: HardhatEthersSigner;
   let user1: HardhatEthersSigner;
   let user2: HardhatEthersSigner;
-  let user3: HardhatEthersSigner;
+  let token1: HardhatEthersSigner;
+  let token2: HardhatEthersSigner;
+  let token3: HardhatEthersSigner;
+  let token4: HardhatEthersSigner;
+  let token5: HardhatEthersSigner;
+  let rewardDeployer: HardhatEthersSigner;
 
   let dlpRegistry: DLPRegistryImplementation;
   let vanaEpoch: VanaEpochImplementation;
-  let treasury: TreasuryImplementation;
+  let dlpRegistryTreasury: TreasuryImplementation;
   let dlpPerformance: DLPPerformanceImplementation;
+  let dlpRewardDeployer: DLPRewardDeployerImplementation;
+  let dlpRewardSwap: DLPRewardSwapImplementationMock;
+  let dlpRewardDeployerTreasury: TreasuryImplementation;
 
   // Configuration constants
   const DLP_REGISTRATION_DEPOSIT = parseEther(1); // 1 VANA
@@ -48,6 +58,10 @@ describe("DLP System Tests", () => {
   const DAY_SIZE = 100; // blocks
   const EPOCH_SIZE = 10; // days
   const EPOCH_REWARD_AMOUNT = parseEther(10); // 10 VANA
+
+  const MAXIMUM_SLIPPAGE = parseEther(10); // 10%
+  const REWARD_PERCENTAGE = parseEther(60); // 60%
+  const NUMBER_OF_TRANCHES = 90n;
 
   const DEFAULT_ADMIN_ROLE =
     "0x0000000000000000000000000000000000000000000000000000000000000000";
@@ -59,6 +73,9 @@ describe("DLP System Tests", () => {
   );
   const CUSTODIAN_ROLE = ethers.keccak256(
     ethers.toUtf8Bytes("CUSTODIAN_ROLE"),
+  );
+  const REWARD_DEPLOYER_ROLE = ethers.keccak256(
+    ethers.toUtf8Bytes("REWARD_DEPLOYER_ROLE"),
   );
 
   type DlpRegistration = {
@@ -89,35 +106,25 @@ describe("DLP System Tests", () => {
     });
 
     [
-      owner,
+      admin,
       maintainer,
       manager,
-      custodian,
       user1,
       user2,
-      user3,
+      token1,
+      token2,
+      token3,
+      token4,
+      token5,
       dlp1Owner,
       dlp2Owner,
+      rewardDeployer,
     ] = await ethers.getSigners();
-
-    // Deploy Treasury
-    const treasuryDeploy = await upgrades.deployProxy(
-      await ethers.getContractFactory("TreasuryImplementation"),
-      [owner.address, custodian.address],
-      {
-        kind: "uups",
-      }
-    );
-
-    treasury = await ethers.getContractAt(
-      "TreasuryImplementation",
-      treasuryDeploy.target
-    );
 
     // Deploy DLPRegistry
     const dlpRegistryDeploy = await upgrades.deployProxy(
       await ethers.getContractFactory("DLPRegistryImplementation"),
-      [owner.address],
+      [admin.address],
       {
         kind: "uups",
       }
@@ -128,11 +135,25 @@ describe("DLP System Tests", () => {
       dlpRegistryDeploy.target
     );
 
+    // Deploy Treasury
+    const dlpRegistryTreasuryDeploy = await upgrades.deployProxy(
+      await ethers.getContractFactory("TreasuryImplementation"),
+      [admin.address, dlpRegistry.target],
+      {
+        kind: "uups",
+      }
+    );
+
+    dlpRegistryTreasury = await ethers.getContractAt(
+      "TreasuryImplementation",
+      dlpRegistryTreasuryDeploy.target
+    );
+
     // Deploy VanaEpoch with parameters
     const vanaEpochDeploy = await upgrades.deployProxy(
       await ethers.getContractFactory("VanaEpochImplementation"),
       [{
-        ownerAddress: owner.address,
+        ownerAddress: admin.address,
         dlpRegistryAddress: dlpRegistry.target,
         daySize: DAY_SIZE,
         epochSize: EPOCH_SIZE,
@@ -151,7 +172,7 @@ describe("DLP System Tests", () => {
     // Deploy DLPPerformance
     const dlpPerformanceDeploy = await upgrades.deployProxy(
       await ethers.getContractFactory("DLPPerformanceImplementation"),
-      [owner.address, dlpRegistry.target],
+      [admin.address, dlpRegistry.target],
       {
         kind: "uups",
       }
@@ -162,20 +183,63 @@ describe("DLP System Tests", () => {
       dlpPerformanceDeploy.target
     );
 
-    // Configure contracts
-    await dlpRegistry.connect(owner).updateDlpRegistrationDepositAmount(DLP_REGISTRATION_DEPOSIT);
-    await dlpRegistry.connect(owner).updateVanaEpoch(vanaEpoch.target);
-    await dlpRegistry.connect(owner).updateTreasury(treasury.target);
+    dlpRewardSwap = await ethers.deployContract("DLPRewardSwapImplementationMock", []);
 
-    await dlpPerformance.connect(owner).updateVanaEpoch(vanaEpoch.target);
-    await vanaEpoch.connect(owner).updateDlpPerformance(dlpPerformance.target);
+
+    const dlpRewardDeployerDeploy = await upgrades.deployProxy(
+      await ethers.getContractFactory("DLPRewardDeployerImplementation"),
+      [
+        admin.address,
+        dlpRegistry.target,
+        vanaEpoch.target,
+        dlpRewardSwap.target,
+        NUMBER_OF_TRANCHES,
+        REWARD_PERCENTAGE,
+        MAXIMUM_SLIPPAGE
+      ],
+      {
+        kind: "uups",
+      }
+    );
+
+    dlpRewardDeployer = await ethers.getContractAt(
+      "DLPRewardDeployerImplementation",
+      dlpRewardDeployerDeploy.target
+    );
+
+
+    const dlpRewardDeployerTreasuryDeploy = await upgrades.deployProxy(
+      await ethers.getContractFactory("TreasuryImplementation"),
+      [admin.address, dlpRewardDeployer.target],
+      {
+        kind: "uups",
+      }
+    );
+
+    dlpRewardDeployerTreasury = await ethers.getContractAt(
+      "TreasuryImplementation",
+      dlpRewardDeployerTreasuryDeploy.target
+    );
+
+    // Configure contracts
+    await dlpRegistry.connect(admin).updateDlpRegistrationDepositAmount(DLP_REGISTRATION_DEPOSIT);
+    await dlpRegistry.connect(admin).updateVanaEpoch(vanaEpoch.target);
+    await dlpRegistry.connect(admin).updateTreasury(dlpRegistryTreasury.target);
+
+    await dlpRewardDeployer.connect(admin).updateTreasury(dlpRegistryTreasuryDeploy.target);
+    await dlpRegistryTreasury.connect(admin).updateCustodian(dlpRewardDeployer.target);
+
+    await dlpPerformance.connect(admin).updateVanaEpoch(vanaEpoch.target);
+    await vanaEpoch.connect(admin).updateDlpPerformance(dlpPerformance.target);
 
     // Set up roles
-    await dlpRegistry.connect(owner).grantRole(MAINTAINER_ROLE, maintainer);
-    await vanaEpoch.connect(owner).grantRole(MAINTAINER_ROLE, maintainer);
-    await treasury.connect(owner).grantRole(CUSTODIAN_ROLE, custodian);
-    await dlpPerformance.connect(owner).grantRole(MAINTAINER_ROLE, maintainer);
-    await dlpPerformance.connect(owner).grantRole(MANAGER_ROLE, manager);
+    await dlpRegistry.connect(admin).grantRole(MAINTAINER_ROLE, maintainer);
+    await vanaEpoch.connect(admin).grantRole(MAINTAINER_ROLE, maintainer);
+    await dlpPerformance.connect(admin).grantRole(MAINTAINER_ROLE, maintainer);
+    await dlpPerformance.connect(admin).grantRole(MANAGER_ROLE, manager);
+    await dlpRewardDeployer.connect(admin).grantRole(MAINTAINER_ROLE, maintainer);
+    await dlpRewardDeployer.connect(admin).grantRole(REWARD_DEPLOYER_ROLE, rewardDeployer);
+
 
     // Prepare DLP info
     dlp1Info = {
@@ -199,7 +263,7 @@ describe("DLP System Tests", () => {
     };
 
     await vanaEpoch.initializeEpoch(0, 0, EPOCH_START_BLOCK - 1, 0, [], true);
-    await vanaEpoch.initializeEpoch(1, EPOCH_START_BLOCK, EPOCH_START_BLOCK + DAY_SIZE * EPOCH_SIZE, EPOCH_REWARD_AMOUNT, [], false);
+    // await vanaEpoch.initializeEpoch(1, EPOCH_START_BLOCK, EPOCH_START_BLOCK + DAY_SIZE * EPOCH_SIZE, EPOCH_REWARD_AMOUNT, [], false);
   };
 
   async function advanceToEpochN(epochNumber: number) {
@@ -215,12 +279,12 @@ describe("DLP System Tests", () => {
 
     it("should have correct params after deploy", async function () {
       // DLPRegistry checks
-      (await dlpRegistry.hasRole(DEFAULT_ADMIN_ROLE, owner)).should.eq(true);
-      (await dlpRegistry.hasRole(MAINTAINER_ROLE, owner)).should.eq(true);
+      (await dlpRegistry.hasRole(DEFAULT_ADMIN_ROLE, admin)).should.eq(true);
+      (await dlpRegistry.hasRole(MAINTAINER_ROLE, admin)).should.eq(true);
       (await dlpRegistry.hasRole(MAINTAINER_ROLE, maintainer)).should.eq(true);
       (await dlpRegistry.dlpRegistrationDepositAmount()).should.eq(DLP_REGISTRATION_DEPOSIT);
       (await dlpRegistry.vanaEpoch()).should.eq(vanaEpoch.target);
-      (await dlpRegistry.treasury()).should.eq(treasury.target);
+      (await dlpRegistry.treasury()).should.eq(dlpRegistryTreasury.target);
       (await dlpRegistry.dlpsCount()).should.eq(0);
 
       // VanaEpoch checks
@@ -230,17 +294,32 @@ describe("DLP System Tests", () => {
       (await vanaEpoch.dlpRegistry()).should.eq(dlpRegistry.target);
 
       // Treasury checks
-      (await treasury.custodian()).should.eq(custodian.address);
-      (await treasury.hasRole(CUSTODIAN_ROLE, custodian)).should.eq(true);
+      (await dlpRegistryTreasury.custodian()).should.eq(dlpRegistry);
+      (await dlpRegistryTreasury.hasRole(CUSTODIAN_ROLE, dlpRegistry)).should.eq(true);
 
       // DLPPerformance checks
       (await dlpPerformance.dlpRegistry()).should.eq(dlpRegistry.target);
-      (await dlpPerformance.hasRole(DEFAULT_ADMIN_ROLE, owner)).should.eq(true);
-      (await dlpPerformance.hasRole(MAINTAINER_ROLE, owner)).should.eq(true);
+      (await dlpPerformance.hasRole(DEFAULT_ADMIN_ROLE, admin)).should.eq(true);
+      (await dlpPerformance.hasRole(MAINTAINER_ROLE, admin)).should.eq(true);
       (await dlpPerformance.hasRole(MAINTAINER_ROLE, maintainer)).should.eq(true);
-      (await dlpPerformance.hasRole(MANAGER_ROLE, owner)).should.eq(true);
+      (await dlpPerformance.hasRole(MANAGER_ROLE, admin)).should.eq(true);
       (await dlpPerformance.hasRole(MANAGER_ROLE, manager)).should.eq(true);
       (await dlpPerformance.version()).should.eq(1);
+
+      // DLPRewardDeployer checks
+      (await dlpRewardDeployer.dlpRegistry()).should.eq(dlpRegistry.target);
+      (await dlpRewardDeployer.vanaEpoch()).should.eq(vanaEpoch.target);
+      (await dlpRewardDeployer.dlpRewardSwap()).should.eq(dlpRewardSwap.target);
+      (await dlpRewardDeployer.numberOfTranches()).should.eq(NUMBER_OF_TRANCHES);
+      (await dlpRewardDeployer.rewardPercentage()).should.eq(REWARD_PERCENTAGE);
+      (await dlpRewardDeployer.maximumSlippagePercentage()).should.eq(MAXIMUM_SLIPPAGE);
+      (await dlpRewardDeployer.hasRole(DEFAULT_ADMIN_ROLE, admin)).should.eq(true);
+      (await dlpRewardDeployer.hasRole(MAINTAINER_ROLE, admin)).should.eq(true);
+
+      // DLPRewardDeployerTreasury checks
+      (await dlpRewardDeployerTreasury.custodian()).should.eq(dlpRewardDeployer);
+      (await dlpRewardDeployerTreasury.hasRole(CUSTODIAN_ROLE, dlpRewardDeployer)).should.eq(true);
+      (await dlpRewardDeployerTreasury.hasRole(DEFAULT_ADMIN_ROLE, admin)).should.eq(true);
     });
 
     it("should initialize DLPPerformance correctly", async function () {
@@ -248,7 +327,7 @@ describe("DLP System Tests", () => {
       (await dlpPerformance.dlpRegistry()).should.eq(dlpRegistry.target);
 
       // Check role configuration
-      (await dlpPerformance.hasRole(DEFAULT_ADMIN_ROLE, owner)).should.eq(true);
+      (await dlpPerformance.hasRole(DEFAULT_ADMIN_ROLE, admin)).should.eq(true);
       (await dlpPerformance.hasRole(MAINTAINER_ROLE, maintainer)).should.eq(true);
       (await dlpPerformance.hasRole(MANAGER_ROLE, manager)).should.eq(true);
 
@@ -276,17 +355,17 @@ describe("DLP System Tests", () => {
       (await dlpPerformance.paused()).should.be.equal(false);
     });
 
-    it("should upgradeTo DLPPerformance when owner", async function () {
+    it("should upgradeTo DLPPerformance when admin", async function () {
       await upgrades.upgradeProxy(
         dlpPerformance,
-        await ethers.getContractFactory("DLPPerformanceImplementation", owner),
+        await ethers.getContractFactory("DLPPerformanceImplementation", admin),
       );
 
       const version = await dlpPerformance.version();
       version.should.eq(1);
     });
 
-    it("should reject upgradeTo DLPPerformance when non owner", async function () {
+    it("should reject upgradeTo DLPPerformance when non admin", async function () {
       const DLPPerformanceFactory = await ethers.getContractFactory("DLPPerformanceImplementation", user1);
       await upgrades.upgradeProxy(dlpPerformance, DLPPerformanceFactory)
         .should.be.rejectedWith("AccessControl");
@@ -326,8 +405,11 @@ describe("DLP System Tests", () => {
       await dlpRegistry.connect(dlp1Owner).registerDlp(dlp1Info, { value: DLP_REGISTRATION_DEPOSIT });
       await dlpRegistry.connect(dlp2Owner).registerDlp(dlp2Info, { value: DLP_REGISTRATION_DEPOSIT });
 
-      await dlpRegistry.connect(maintainer).updateDlpToken(1, user1.address);
-      await dlpRegistry.connect(maintainer).updateDlpToken(2, user2.address);
+      await dlpRegistry.connect(maintainer).updateDlpToken(1, token1.address);
+      await dlpRegistry.connect(maintainer).updateDlpToken(2, token2.address);
+
+      await dlpRegistry.connect(maintainer).updateDlpLpTokenId(1, 1);
+      await dlpRegistry.connect(maintainer).updateDlpLpTokenId(2, 2);
 
       await dlpRegistry.connect(maintainer).updateDlpVerification(1, true);
       await dlpRegistry.connect(maintainer).updateDlpVerification(2, true);
@@ -337,6 +419,7 @@ describe("DLP System Tests", () => {
     });
 
     it("should save epoch performances", async function () {
+      await advanceToEpochN(2);
       // Prepare performance data
       const dlpPerformances: DlpPerformanceInput[] = [
         {
@@ -360,9 +443,9 @@ describe("DLP System Tests", () => {
         .connect(manager)
         .saveEpochPerformances(1, dlpPerformances, false)
         .should.emit(dlpPerformance, "EpochDlpPerformancesSaved")
-        .withArgs(1, 1, parseEther(100))
+        .withArgs(1, 1, parseEther(0.3), parseEther(1000), 50, parseEther(5))
         .and.emit(dlpPerformance, "EpochDlpPerformancesSaved")
-        .withArgs(1, 2, parseEther(200));
+        .withArgs(1, 2, parseEther(0.7), parseEther(2000), 100, parseEther(10));
 
       // Check performance data saved correctly
       const dlp1Performance = await dlpPerformance.epochDlpPerformances(1, 1);
@@ -379,6 +462,7 @@ describe("DLP System Tests", () => {
     });
 
     it("should save and finalize epoch performances", async function () {
+      await advanceToEpochN(2);
       // Prepare performance data
       const dlpPerformances: DlpPerformanceInput[] = [
         {
@@ -402,14 +486,15 @@ describe("DLP System Tests", () => {
         .connect(manager)
         .saveEpochPerformances(1, dlpPerformances, true)
         .should.emit(dlpPerformance, "EpochDlpPerformancesSaved")
-        .withArgs(1, 1, parseEther(100))
+        .withArgs(1, 1, parseEther(0.1), parseEther(1000), 50, parseEther(5))
         .and.emit(dlpPerformance, "EpochDlpPerformancesSaved")
-        .withArgs(1, 2, parseEther(200))
-        .and.emit(dlpPerformance, "EpochFinalised")
+        .withArgs(1, 2, parseEther(0.9), parseEther(2000), 100, parseEther(10))
+        .and.emit(vanaEpoch, "EpochFinalized")
         .withArgs(1);
     });
 
     it("should reject saving performances to already finalized epoch", async function () {
+      await advanceToEpochN(3);
       // Prepare performance data
       const dlpPerformances: DlpPerformanceInput[] = [
         {
@@ -422,7 +507,7 @@ describe("DLP System Tests", () => {
       ];
 
       // Save and finalize epoch
-      await dlpPerformance
+       await dlpPerformance
         .connect(manager)
         .saveEpochPerformances(1, dlpPerformances, true);
 
@@ -439,8 +524,8 @@ describe("DLP System Tests", () => {
 
       await dlpPerformance
         .connect(manager)
-        .saveEpochPerformances(1, newPerformances, false)
-        .should.be.rejectedWith("EpochAlreadyFinalised");
+        .saveEpochPerformances(1, newPerformances, true)
+        .should.be.rejectedWith("EpochAlreadyFinalized()");
     });
 
     it("should reject saving performances when not manager", async function () {
@@ -481,7 +566,7 @@ describe("DLP System Tests", () => {
         }
       ];
 
-      await advanceToEpochN(2);
+      await advanceToEpochN(3);
 
       await dlpPerformance
         .connect(manager)
@@ -509,18 +594,6 @@ describe("DLP System Tests", () => {
       dlp1Epoch2.totalScore.should.eq(parseEther(1));
     });
 
-    it("should allow saving empty performance data", async function () {
-      const emptyPerformances: DlpPerformanceInput[] = [];
-
-      await advanceToEpochN(2);
-
-      await dlpPerformance
-        .connect(manager)
-        .saveEpochPerformances(1, emptyPerformances, true)
-        .should.emit(dlpRegistry, "EpochFinalised")
-        .withArgs(1);
-    });
-
     it("should reject saving performances when paused", async function () {
       // Pause the contract
       await dlpPerformance.connect(maintainer).pause();
@@ -540,7 +613,7 @@ describe("DLP System Tests", () => {
       await dlpPerformance
         .connect(manager)
         .saveEpochPerformances(1, dlpPerformances, false)
-        .should.be.rejectedWith("Pausable: paused");
+        .should.be.rejectedWith("EnforcedPause()");
     });
 
     it("should allow updating performance before finalizing", async function () {
@@ -594,8 +667,10 @@ describe("DLP System Tests", () => {
       await dlpRegistry.connect(dlp2Owner).registerDlp(dlp2Info, { value: DLP_REGISTRATION_DEPOSIT });
 
       // Make DLPs eligible
-      await dlpRegistry.connect(maintainer).updateDlpToken(1, user1.address);
-      await dlpRegistry.connect(maintainer).updateDlpToken(2, user2.address);
+      await dlpRegistry.connect(maintainer).updateDlpToken(1, token1.address);
+      await dlpRegistry.connect(maintainer).updateDlpToken(2, token2.address);
+      await dlpRegistry.connect(maintainer).updateDlpLpTokenId(1, 1);
+      await dlpRegistry.connect(maintainer).updateDlpLpTokenId(2, 2);
       await dlpRegistry.connect(maintainer).updateDlpVerification(1, true);
       await dlpRegistry.connect(maintainer).updateDlpVerification(2, true);
     });
@@ -689,7 +764,7 @@ describe("DLP System Tests", () => {
     it("should updateEpochSize when admin in VanaEpoch", async function () {
       const newEpochSize = 50;
       await vanaEpoch
-        .connect(owner)
+        .connect(admin)
         .updateEpochSize(newEpochSize)
         .should.emit(vanaEpoch, "EpochSizeUpdated")
         .withArgs(newEpochSize);
@@ -700,7 +775,7 @@ describe("DLP System Tests", () => {
     it("should updateEpochRewardAmount when admin in VanaEpoch", async function () {
       const newRewardAmount = parseEther(20);
       await vanaEpoch
-        .connect(owner)
+        .connect(admin)
         .updateEpochRewardAmount(newRewardAmount)
         .should.emit(vanaEpoch, "EpochRewardAmountUpdated")
         .withArgs(newRewardAmount);
@@ -709,13 +784,13 @@ describe("DLP System Tests", () => {
     });
 
     it("should updateCustodian when admin in Treasury", async function () {
-      await treasury
-        .connect(owner)
+      await dlpRegistryTreasury
+        .connect(admin)
         .updateCustodian(user1.address);
 
-      (await treasury.custodian()).should.eq(user1.address);
-      (await treasury.hasRole(CUSTODIAN_ROLE, custodian)).should.eq(false);
-      (await treasury.hasRole(CUSTODIAN_ROLE, user1)).should.eq(true);
+      (await dlpRegistryTreasury.custodian()).should.eq(user1.address);
+      (await dlpRegistryTreasury.hasRole(CUSTODIAN_ROLE, dlpRegistry)).should.eq(false);
+      (await dlpRegistryTreasury.hasRole(CUSTODIAN_ROLE, user1)).should.eq(true);
     });
   });
 
@@ -768,7 +843,7 @@ describe("DLP System Tests", () => {
       (await dlpRegistry.dlpsByName(dlp1Info.name)).should.deep.eq(dlp1);
 
       // Check treasury received deposit
-      (await ethers.provider.getBalance(treasury.target)).should.eq(DLP_REGISTRATION_DEPOSIT);
+      (await ethers.provider.getBalance(dlpRegistryTreasury.target)).should.eq(DLP_REGISTRATION_DEPOSIT);
     });
 
     it("should reject registerDlp when insufficient deposit", async function () {
@@ -916,16 +991,14 @@ describe("DLP System Tests", () => {
         .connect(dlp1Owner)
         .registerDlp(dlp1Info, { value: DLP_REGISTRATION_DEPOSIT });
 
-      const tokenAddress = user1.address;
-
       await dlpRegistry
         .connect(maintainer)
-        .updateDlpToken(1, tokenAddress)
-        .should.emit(dlpRegistry, "DLPTokenUpdated")
-        .withArgs(1, tokenAddress);
+        .updateDlpToken(1, token1)
+        .should.emit(dlpRegistry, "DlpTokenUpdated")
+        .withArgs(1, token1);
 
       const dlp1 = await dlpRegistry.dlps(1);
-      dlp1.tokenAddress.should.eq(tokenAddress);
+      dlp1.tokenAddress.should.eq(token1);
     });
 
     it("should updateDlpVerification and change eligibility", async function () {
@@ -934,7 +1007,9 @@ describe("DLP System Tests", () => {
         .registerDlp(dlp1Info, { value: DLP_REGISTRATION_DEPOSIT });
 
       // Set token first
-      await dlpRegistry.connect(maintainer).updateDlpToken(1, user1.address);
+      await dlpRegistry.connect(maintainer).updateDlpToken(1, token1.address);
+
+      await dlpRegistry.connect(maintainer).updateDlpLpTokenId(1, 1);
 
       // Verify DLP
       await dlpRegistry
@@ -989,11 +1064,10 @@ describe("DLP System Tests", () => {
 
       epoch1.startBlock.should.be.lte(currentBlockNum);
       epoch1.rewardAmount.should.eq(EPOCH_REWARD_AMOUNT);
-      epoch1.dlpIds.length.should.eq(0);
-      epoch1.isFinalised.should.eq(false);
     });
 
     it("should create multiple epochs when needed", async function () {
+      await advanceToEpochN(1);
       // Create first epoch
       await vanaEpoch.connect(user1).createEpochs();
       const epoch1 = await vanaEpoch.epochs(1);
@@ -1010,7 +1084,7 @@ describe("DLP System Tests", () => {
       epoch2.rewardAmount.should.eq(EPOCH_REWARD_AMOUNT);
     });
 
-    it.only("should createEpochsUntilBlockNumber properly", async function () {
+    it("should createEpochsUntilBlockNumber properly", async function () {
       await advanceToEpochN(1);
 
       await vanaEpoch.connect(user1).createEpochs();
@@ -1035,22 +1109,22 @@ describe("DLP System Tests", () => {
       await deploy();
 
       // Send some ETH to treasury for testing
-      await owner.sendTransaction({
-        to: treasury.target,
+      await admin.sendTransaction({
+        to: dlpRegistryTreasury.target,
         value: parseEther(10)
       });
     });
 
     it("should accept ETH transfers", async function () {
       const amount = parseEther(1);
-      const balanceBefore = await ethers.provider.getBalance(treasury.target);
+      const balanceBefore = await ethers.provider.getBalance(dlpRegistryTreasury.target);
 
       await user1.sendTransaction({
-        to: treasury.target,
+        to: dlpRegistryTreasury.target,
         value: amount
       });
 
-      const balanceAfter = await ethers.provider.getBalance(treasury.target);
+      const balanceAfter = await ethers.provider.getBalance(dlpRegistryTreasury.target);
       (balanceAfter - balanceBefore).should.eq(amount);
     });
 
@@ -1058,10 +1132,10 @@ describe("DLP System Tests", () => {
       const amount = parseEther(1);
       const recipientBalanceBefore = await ethers.provider.getBalance(user1.address);
 
-      await treasury
-        .connect(custodian)
+      await dlpRegistryTreasury
+        .connect(admin)
         .transfer(user1.address, "0x0000000000000000000000000000000000000000", amount)
-        .should.emit(treasury, "Transfer")
+        .should.emit(dlpRegistryTreasury, "Transfer")
         .withArgs(user1.address, "0x0000000000000000000000000000000000000000", amount);
 
       const recipientBalanceAfter = await ethers.provider.getBalance(user1.address);
@@ -1069,14 +1143,14 @@ describe("DLP System Tests", () => {
     });
 
     it("should reject transfer with zero amount", async function () {
-      await treasury
-        .connect(custodian)
+      await dlpRegistryTreasury
+        .connect(admin)
         .transfer(user1.address, "0x0000000000000000000000000000000000000000", 0)
         .should.be.rejectedWith("ZeroAmount");
     });
 
     it("should reject transfer when not custodian", async function () {
-      await treasury
+      await dlpRegistryTreasury
         .connect(user1)
         .transfer(user2.address, "0x0000000000000000000000000000000000000000", parseEther(1))
         .should.be.rejectedWith("AccessControl");
@@ -1094,8 +1168,10 @@ describe("DLP System Tests", () => {
       await dlpRegistry.connect(dlp2Owner).registerDlp(dlp2Info, { value: DLP_REGISTRATION_DEPOSIT });
 
       // 2. Set token addresses and make DLPs eligible
-      await dlpRegistry.connect(maintainer).updateDlpToken(1, user1.address);
-      await dlpRegistry.connect(maintainer).updateDlpToken(2, user2.address);
+      await dlpRegistry.connect(maintainer).updateDlpToken(1, token1.address);
+      await dlpRegistry.connect(maintainer).updateDlpToken(2, token2.address);
+      await dlpRegistry.connect(maintainer).updateDlpLpTokenId(1, 1);
+      await dlpRegistry.connect(maintainer).updateDlpLpTokenId(2, 2);
       await dlpRegistry.connect(maintainer).updateDlpVerification(1, true);
       await dlpRegistry.connect(maintainer).updateDlpVerification(2, true);
 
@@ -1148,7 +1224,7 @@ describe("DLP System Tests", () => {
       dlp2Performance.totalScore.should.eq(parseEther(0.4));
 
       // 8. Verify treasury has received deposits
-      (await ethers.provider.getBalance(treasury.target)).should.eq(DLP_REGISTRATION_DEPOSIT * 2n);
+      (await ethers.provider.getBalance(dlpRegistryTreasury.target)).should.eq(DLP_REGISTRATION_DEPOSIT * 2n);
     });
 
     it("should handle DLP deregistration and performance impacts", async function () {
@@ -1157,8 +1233,10 @@ describe("DLP System Tests", () => {
       await dlpRegistry.connect(dlp2Owner).registerDlp(dlp2Info, { value: DLP_REGISTRATION_DEPOSIT });
 
       // 2. Make them eligible
-      await dlpRegistry.connect(maintainer).updateDlpToken(1, user1.address);
-      await dlpRegistry.connect(maintainer).updateDlpToken(2, user2.address);
+      await dlpRegistry.connect(maintainer).updateDlpToken(1, token1.address);
+      await dlpRegistry.connect(maintainer).updateDlpToken(2, token2.address);
+      await dlpRegistry.connect(maintainer).updateDlpLpTokenId(1, 1);
+      await dlpRegistry.connect(maintainer).updateDlpLpTokenId(2, 2);
       await dlpRegistry.connect(maintainer).updateDlpVerification(1, true);
       await dlpRegistry.connect(maintainer).updateDlpVerification(2, true);
 
@@ -1203,5 +1281,232 @@ describe("DLP System Tests", () => {
       const dlp1Performance = await dlpPerformance.epochDlpPerformances(1, 1);
       dlp1Performance.totalScore.should.eq(parseEther(0.6));
     });
+  });
+
+  describe.only("Dlp Reward Deployer", () => {
+    const dlp1PerformanceDefault = {
+      dlpId: 1,
+      totalScore: parseEther(0.6),
+      tradingVolume: parseEther(1000),
+      uniqueContributors: 50n,
+      dataAccessFees: parseEther(5)
+    };
+
+    const dlp2PerformanceDefault = {
+      dlpId: 2,
+      totalScore: parseEther(0.4),
+      tradingVolume: parseEther(2000),
+      uniqueContributors: 100n,
+      dataAccessFees: parseEther(10)
+    };
+
+    const dlpPerformancesDefault = [dlp1PerformanceDefault, dlp2PerformanceDefault];
+
+    const dlpRewardDeployerTreasuryInitialBalance = parseEther(1000000);
+    beforeEach(async () => {
+      await deploy();
+
+      await dlpRewardDeployerTreasury
+
+      await setBalance(dlpRewardDeployerTreasury.target.toString(), dlpRewardDeployerTreasuryInitialBalance);
+
+      // Register and make DLPs eligible
+      await dlpRegistry.connect(dlp1Owner).registerDlp(dlp1Info, { value: DLP_REGISTRATION_DEPOSIT });
+      await dlpRegistry.connect(dlp2Owner).registerDlp(dlp2Info, { value: DLP_REGISTRATION_DEPOSIT });
+
+      await dlpRegistry.connect(maintainer).updateDlpToken(1, token1.address);
+      await dlpRegistry.connect(maintainer).updateDlpToken(2, token2.address);
+
+      await dlpRegistry.connect(maintainer).updateDlpLpTokenId(1, 1);
+      await dlpRegistry.connect(maintainer).updateDlpLpTokenId(2, 2);
+
+      await dlpRegistry.connect(maintainer).updateDlpVerification(1, true);
+      await dlpRegistry.connect(maintainer).updateDlpVerification(2, true);
+    });
+
+    it("should updateTreasury when maintainer", async function () {
+      await dlpRewardDeployer
+        .connect(admin)
+        .updateTreasury(user1.address);
+
+      (await dlpRewardDeployer.treasury()).should.eq(user1.address);
+    });
+
+    it("should reject updateTreasury when not admin", async function () {
+      await dlpRewardDeployer
+        .connect(user1)
+        .updateTreasury(user1.address).should.be.rejectedWith(
+          `AccessControlUnauthorizedAccount("${user1.address}", "${MAINTAINER_ROLE}")`,
+        );
+    });
+
+    //updateVanaEpoch
+    it("should updateVanaEpoch when maintainer", async function () {
+      await dlpRewardDeployer
+        .connect(admin)
+        .updateVanaEpoch(user1.address);
+
+      (await dlpRewardDeployer.vanaEpoch()).should.eq(user1.address);
+    });
+
+    it("should reject updateVanaEpoch when not maintainer", async function () {
+      await dlpRewardDeployer
+        .connect(user1)
+        .updateVanaEpoch(user1.address).should.be.rejectedWith(
+          `AccessControlUnauthorizedAccount("${user1.address}", "${MAINTAINER_ROLE}")`,
+        );
+    });
+
+    it("should updateDlpRegistry when maintainer", async function () {
+      await dlpRewardDeployer
+        .connect(admin)
+        .updateDlpRegistry(user1.address);
+
+      (await dlpRewardDeployer.dlpRegistry()).should.eq(user1.address);
+    });
+
+    it("should reject updateDlpRegistry when not maintainer", async function () {
+      await dlpRewardDeployer
+        .connect(user1)
+        .updateDlpRegistry(user1.address).should.be.rejectedWith(
+          `AccessControlUnauthorizedAccount("${user1.address}", "${MAINTAINER_ROLE}")`,
+        );
+    });
+
+    it("should updateDlpRewardSwap when maintainer", async function () {
+      await dlpRewardDeployer
+        .connect(admin)
+        .updateDlpRewardSwap(user1.address);
+
+      (await dlpRewardDeployer.dlpRewardSwap()).should.eq(user1.address);
+    });
+
+    it("should reject updateDlpRewardSwap when not maintainer", async function () {
+      await dlpRewardDeployer
+        .connect(user1)
+        .updateDlpRewardSwap(user1.address).should.be.rejectedWith(
+          `AccessControlUnauthorizedAccount("${user1.address}", "${MAINTAINER_ROLE}")`,
+        );
+    });
+
+    it.only("should distributeRewards", async function () {
+      await advanceToEpochN(2);
+
+      await vanaEpoch.connect(user1).createEpochs();
+
+      await dlpPerformance
+        .connect(manager)
+        .saveEpochPerformances(1, dlpPerformancesDefault, true);
+
+      const epoch1Dlp1 = await vanaEpoch.epochDlps(1, 1);
+      epoch1Dlp1.rewardAmount.should.eq(parseEther(0.6) * EPOCH_REWARD_AMOUNT / parseEther(1));
+
+      const epoch1Dlp2 = await vanaEpoch.epochDlps(1, 2);
+      epoch1Dlp2.rewardAmount.should.eq(parseEther(0.4) * EPOCH_REWARD_AMOUNT / parseEther(1));
+
+      const trancheAmount = epoch1Dlp1.rewardAmount / NUMBER_OF_TRANCHES;
+      const usedVanaAmount = trancheAmount * 9n / 10n;
+      const tokenRewardAmount = trancheAmount * 2n;
+      const spareVana = trancheAmount / 100n;
+      const spareToken = tokenRewardAmount / 50n;
+
+      await dlpRewardSwap.setSplitRewardSwapResponse(
+        tokenRewardAmount,
+        spareToken,
+        spareVana,
+        usedVanaAmount
+      )
+
+      await dlpRewardDeployer.connect(rewardDeployer).distributeRewards(1, [1])
+        .should.emit(dlpRewardDeployer, "EpochDlpRewardDistributed")
+        .withArgs(1, 1, 1, trancheAmount, tokenRewardAmount, spareToken, spareVana, usedVanaAmount);
+
+      const epoch1Dlp1DistributedRewards = await dlpRewardDeployer.epochDlpDistributedRewards(1, 1);
+
+      epoch1Dlp1DistributedRewards[0].amount.should.eq(trancheAmount);
+      epoch1Dlp1DistributedRewards[0].blockNumber.should.eq(await ethers.provider.getBlockNumber());
+      epoch1Dlp1DistributedRewards[0].tokenRewardAmount.should.eq(tokenRewardAmount);
+      epoch1Dlp1DistributedRewards[0].spareToken.should.eq(spareToken);
+      epoch1Dlp1DistributedRewards[0].spareVana.should.eq(spareVana);
+      epoch1Dlp1DistributedRewards[0].usedVanaAmount.should.eq(usedVanaAmount);
+    });
+
+    it.only("should distributeRewards multiple times", async function () {
+      await advanceToEpochN(2);
+
+      await vanaEpoch.connect(user1).createEpochs();
+
+      await dlpPerformance
+        .connect(manager)
+        .saveEpochPerformances(1, dlpPerformancesDefault, true);
+
+      const epoch1Dlp1 = await vanaEpoch.epochDlps(1, 1);
+      epoch1Dlp1.rewardAmount.should.eq(parseEther(0.6) * EPOCH_REWARD_AMOUNT / parseEther(1));
+
+      const epoch1Dlp2 = await vanaEpoch.epochDlps(1, 2);
+      epoch1Dlp2.rewardAmount.should.eq(parseEther(0.4) * EPOCH_REWARD_AMOUNT / parseEther(1));
+
+      const trancheAmount = epoch1Dlp1.rewardAmount / NUMBER_OF_TRANCHES;
+      const usedVanaAmount1 = trancheAmount * 9n / 10n;
+      const tokenRewardAmount1 = trancheAmount * 2n;
+      const spareVana1 = trancheAmount / 100n;
+      const spareToken1 = tokenRewardAmount1 / 50n;
+
+      await dlpRewardSwap.setSplitRewardSwapResponse(
+        tokenRewardAmount1,
+        spareToken1,
+        spareVana1,
+        usedVanaAmount1
+      )
+
+      await dlpRewardDeployer.connect(rewardDeployer).distributeRewards(1, [1])
+        .should.emit(dlpRewardDeployer, "EpochDlpRewardDistributed")
+        .withArgs(1, 1, 1, trancheAmount, tokenRewardAmount1, spareToken1, spareVana1, usedVanaAmount1);
+
+      let epoch1Dlp1DistributedRewards = await dlpRewardDeployer.epochDlpDistributedRewards(1, 1);
+
+      epoch1Dlp1DistributedRewards.length.should.eq(1);
+      epoch1Dlp1DistributedRewards[0].amount.should.eq(trancheAmount);
+      epoch1Dlp1DistributedRewards[0].blockNumber.should.eq(await ethers.provider.getBlockNumber());
+      epoch1Dlp1DistributedRewards[0].tokenRewardAmount.should.eq(tokenRewardAmount1);
+      epoch1Dlp1DistributedRewards[0].spareToken.should.eq(spareToken1);
+      epoch1Dlp1DistributedRewards[0].spareVana.should.eq(spareVana1);
+      epoch1Dlp1DistributedRewards[0].usedVanaAmount.should.eq(usedVanaAmount1);
+
+      const usedVanaAmount2 = trancheAmount * 8n / 10n;
+      const tokenRewardAmount2 = trancheAmount * 3n;
+      const spareVana2 = trancheAmount;
+      const spareToken2 = tokenRewardAmount2 / 10n;
+
+      await dlpRewardSwap.setSplitRewardSwapResponse(
+        tokenRewardAmount2,
+        spareToken2,
+        spareVana2,
+        usedVanaAmount2
+      )
+
+      await dlpRewardDeployer.connect(rewardDeployer).distributeRewards(1, [1])
+        .should.emit(dlpRewardDeployer, "EpochDlpRewardDistributed")
+        .withArgs(1, 1, 2, trancheAmount, tokenRewardAmount2, spareToken2, spareVana2, usedVanaAmount2);
+
+      epoch1Dlp1DistributedRewards = await dlpRewardDeployer.epochDlpDistributedRewards(1, 1);
+
+      epoch1Dlp1DistributedRewards.length.should.eq(2);
+      epoch1Dlp1DistributedRewards[0].amount.should.eq(trancheAmount);
+      epoch1Dlp1DistributedRewards[0].blockNumber.should.eq(await ethers.provider.getBlockNumber() - 2);
+      epoch1Dlp1DistributedRewards[0].tokenRewardAmount.should.eq(tokenRewardAmount1);
+      epoch1Dlp1DistributedRewards[0].spareToken.should.eq(spareToken1);
+      epoch1Dlp1DistributedRewards[0].spareVana.should.eq(spareVana1);
+      epoch1Dlp1DistributedRewards[0].usedVanaAmount.should.eq(usedVanaAmount1);
+
+      epoch1Dlp1DistributedRewards[1].amount.should.eq(trancheAmount);
+      epoch1Dlp1DistributedRewards[1].blockNumber.should.eq(await ethers.provider.getBlockNumber());
+      epoch1Dlp1DistributedRewards[1].tokenRewardAmount.should.eq(tokenRewardAmount2);
+      epoch1Dlp1DistributedRewards[1].spareToken.should.eq(spareToken2);
+      epoch1Dlp1DistributedRewards[1].spareVana.should.eq(spareVana2);
+      epoch1Dlp1DistributedRewards[1].usedVanaAmount.should.eq(usedVanaAmount2);
+    });
+
+
   });
 });

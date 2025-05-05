@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.24;
+pragma solidity 0.8.28;
 
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "./interfaces/DLPPerformanceStorageV1.sol";
+
+import "hardhat/console.sol";
 
 contract DLPPerformanceImplementation is
     UUPSUpgradeable,
@@ -23,10 +25,6 @@ DLPPerformanceStorageV1
         uint256 uniqueContributors,
         uint256 dataAccessFees
     );
-
-    error EpochNotEndedYet();
-    error InvalidEpoch();
-    error EpochRewardsAlreadyDistributed();
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -89,7 +87,11 @@ DLPPerformanceStorageV1
         EpochDlpPerformanceInput[] calldata epochDlpPerformances,
         bool finalScores
     ) external override onlyRole(MANAGER_ROLE) whenNotPaused {
-        uint256 dlpRewardsCount = 0;
+        vanaEpoch.createEpochs();
+
+        uint256 epochRewardAmount = vanaEpoch.epochs(epochId).rewardAmount;
+        IVanaEpoch.Rewards [] memory dlpRewards = new IVanaEpoch.Rewards[](epochDlpPerformances.length);
+
         for (uint256 i = 0; i < epochDlpPerformances.length;) {
             EpochDlpPerformanceInput calldata epochDlpPerformance = epochDlpPerformances[i];
 
@@ -100,39 +102,19 @@ DLPPerformanceStorageV1
                 dataAccessFees: epochDlpPerformance.dataAccessFees
             });
 
-            if (epochDlpPerformance.totalScore > 0) {
-                dlpRewardsCount++;
-            }
+            emit EpochDlpPerformancesSaved(
+                epochId,
+                epochDlpPerformance.dlpId,
+                epochDlpPerformance.totalScore,
+                epochDlpPerformance.tradingVolume,
+                epochDlpPerformance.uniqueContributors,
+                epochDlpPerformance.dataAccessFees
+            );
 
-
-            emit EpochDlpPerformancesSaved(epochId, epochDlpPerformance.dlpId, epochDlpPerformance.totalScore, epochDlpPerformance.tradingVolume, epochDlpPerformance.uniqueContributors, epochDlpPerformance.dataAccessFees);
-
-            unchecked {
-                ++i;
-            }
-        }
-
-        if (dlpRewardsCount == 0) {
-            return;
-        }
-
-        IVanaEpoch.Rewards [] memory dlpRewards = new IVanaEpoch.Rewards[](dlpRewardsCount);
-
-        uint256 epochRewardAmount = vanaEpoch.epochs(epochId).rewardAmount;
-        uint256 rewardIndex = 0;
-        for (uint256 i = 0; i < epochDlpPerformances.length;) {
-            EpochDlpPerformanceInput calldata epochDlpPerformance = epochDlpPerformances[i];
-
-            if (epochDlpPerformance.totalScore > 0) {
-                dlpRewards[rewardIndex] = IVanaEpoch.Rewards({
-                    dlpId: epochDlpPerformance.dlpId,
-                    rewardAmount: epochDlpPerformance.totalScore * epochRewardAmount / 1e18
-                });
-
-                unchecked {
-                    ++rewardIndex;
-                }
-            }
+            dlpRewards[i] = IVanaEpoch.Rewards({
+                dlpId: epochDlpPerformance.dlpId,
+                rewardAmount: epochDlpPerformance.totalScore * epochRewardAmount / 1e18
+            });
 
             unchecked {
                 ++i;

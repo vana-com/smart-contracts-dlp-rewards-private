@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.24;
+pragma solidity 0.8.28;
 
 import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import "@openzeppelin/contracts/utils/structs/Checkpoints.sol";
@@ -27,6 +27,7 @@ interface IDLPRegistry {
         uint256 registrationBlockNumber;
         uint256 depositAmount;
         DlpStatus status;
+        uint256 lpTokenId;
         bool isVerified;
     }
 
@@ -55,6 +56,7 @@ interface IDLPRegistry {
         uint256 registrationBlockNumber;
         uint256 depositAmount;
         DlpStatus status;
+        uint256 lpTokenId;
         bool isVerified;
     }
     function dlps(uint256 dlpId) external view returns (DlpInfo memory);
@@ -87,4 +89,5 @@ interface IDLPRegistry {
     function updateDlp(uint256 dlpId, DlpRegistration calldata dlpUpdateInfo) external;
     function deregisterDlp(uint256 dlpId) external;
     function updateDlpToken(uint256 dlpId, address tokenAddress) external;
+    function updateDlpLpTokenId(uint256 dlpId, uint256 lpTokenId) external;
 }

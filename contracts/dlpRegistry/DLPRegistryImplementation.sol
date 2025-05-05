@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.24;
+pragma solidity 0.8.28;
 
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
@@ -46,25 +46,20 @@ contract DLPRegistryImplementation is
 
     event DlpStatusUpdated(uint256 indexed dlpId, DlpStatus newStatus);
     event DlpVerificationUpdated(uint256 indexed dlpId, bool verified);
-    event DlpSubEligibilityThresholdUpdated(uint256 newDlpSubEligibilityThreshold);
     event DlpRegistrationDepositAmountUpdated(uint256 newDlpRegistrationDepositAmount);
     event DlpTokenUpdated(uint256 indexed dlpId, address tokenAddress);
+    event DlpLpTokenAddressUpdated(uint256 indexed dlpId, uint256 lpTokenId);
 
-    // Custom errors
-    error InvalidParam();
-    error InvalidDlpId();
     error InvalidDlpStatus();
     error DlpAlreadyVerified();
     error DlpTokenNotSet();
+    error DlpLpTokenIdNotSet();
     error InvalidAddress();
     error InvalidName();
     error NotDlpOwner();
     error InvalidDepositAmount();
     error DlpAddressCannotBeChanged();
     error TransferFailed();
-    error EpochNotEnded();
-    error EpochDlpScoreAlreadySaved();
-    error EpochRewardsAlreadyDistributed();
     error LastEpochMustBeFinalized();
 
     modifier onlyDlpOwner(uint256 dlpId) {
@@ -113,6 +108,7 @@ contract DLPRegistryImplementation is
                 status: dlp.status,
                 registrationBlockNumber: dlp.registrationBlockNumber,
                 depositAmount: dlp.depositAmount,
+                lpTokenId: dlp.lpTokenId,
                 isVerified: dlp.isVerified
             });
     }
@@ -186,6 +182,10 @@ contract DLPRegistryImplementation is
             revert DlpTokenNotSet();
         }
 
+        if (dlp.lpTokenId == 0) {
+            revert DlpLpTokenIdNotSet();
+        }
+
         dlp.isVerified = isVerified;
 
         emit DlpVerificationUpdated(dlpId, isVerified);
@@ -198,6 +198,13 @@ contract DLPRegistryImplementation is
         dlp.tokenAddress = tokenAddress;
 
         emit DlpTokenUpdated(dlpId, tokenAddress);
+    }
+
+    function updateDlpLpTokenId(uint256 dlpId, uint256 lpTokenId) external override onlyRole(MAINTAINER_ROLE) {
+        Dlp storage dlp = _dlps[dlpId];
+        dlp.lpTokenId = lpTokenId;
+
+        emit DlpLpTokenAddressUpdated(dlpId, lpTokenId);
     }
 
     /**

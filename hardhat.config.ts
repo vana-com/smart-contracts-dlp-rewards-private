@@ -7,15 +7,15 @@ import * as dotenv from "dotenv";
 dotenv.config();
 
 const DEFAULT_COMPILER_SETTINGS =
-  {
-    version: "0.8.24",
-    settings: {
-      optimizer: {
-        enabled: true,
-        runs: 1,
-      },
+{
+  version: "0.8.28",
+  settings: {
+    optimizer: {
+      enabled: true,
+      runs: 1,
     },
-  }
+  },
+}
 
 const UNISWAP_INTEGRATION_COMPILER_SETTINGS = {
   version: "0.8.26",
@@ -39,12 +39,12 @@ const config: HardhatUserConfig = {
     hardhat: {
       allowUnlimitedContractSize: true,
       chainId: 1480,
-      forking: {
-        url: process.env.VANA_RPC_URL || "",
-        blockNumber: 2_500_000,
+      // forking: {
+      //   url: process.env.VANA_RPC_URL || "",
+      //   blockNumber: 2_500_000,
         // url: process.env.MOKSHA_RPC_URL || "",
         // blockNumber: 2_569_780,
-      },
+      // },
       chains: {
         1480: {
           hardforkHistory: {

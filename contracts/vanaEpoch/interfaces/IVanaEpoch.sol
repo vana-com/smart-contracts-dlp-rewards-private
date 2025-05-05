@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.24;
+pragma solidity 0.8.28;
 
 import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import {IDLPRegistry} from "../../dlpRegistry/interfaces/IDLPRegistry.sol";
@@ -8,7 +8,6 @@ import {IDLPPerformance} from "../../dlpPerformance/interfaces/IDLPPerformance.s
 interface IVanaEpoch {
     struct EpochDlp {
         uint256 rewardAmount;
-        uint256 rewardClaimed;
     }
 
     struct Epoch {
@@ -36,13 +35,12 @@ interface IVanaEpoch {
         bool isFinalized;
     }
     function epochs(uint256 epochId) external view returns (EpochInfo memory);
-    function epochDlps(uint256 epochId) external view returns (uint256[] memory);
+    function epochDlpIds(uint256 epochId) external view returns (uint256[] memory);
     function epochRewardAmount() external view returns (uint256);
 
     struct EpochDlpInfo {
         bool isTopDlp;
         uint256 rewardAmount;
-        uint256 rewardClaimed;
     }
     function epochDlps(uint256 epochId, uint256 dlpId) external view returns (EpochDlpInfo memory);
 

@@ -174,3 +174,70 @@ export async function getNextDeploymentAddress(
     };
   }
 }
+
+export async function deterministicDeployProxy(
+  deployer: HardhatEthersSigner,
+  proxyContractName: string,
+  implementationContractName: string,
+  initializeParams:
+    | (string | number | bigint | object)[]
+    | (string | number | bigint)[][],
+  salt: string,
+): Promise<{
+  proxyAddress: string;
+  implementationAddress: string;
+  initializeData: string;
+}> {
+  console.log(``);
+  console.log(``);
+  console.log(``);
+  console.log(`**************************************************************`);
+  console.log(`**************************************************************`);
+  console.log(`**************************************************************`);
+  console.log(`********** Deploying ${proxyContractName} **********`);
+
+  // Deploy the implementation contract
+  const implementationFactory = await ethers.getContractFactory(
+    implementationContractName,
+  );
+
+  const implementationDeploy = await deployments.deploy(
+    implementationContractName,
+    {
+      from: deployer.address,
+      args: [],
+      log: true,
+      deterministicDeployment: ethers.keccak256(ethers.toUtf8Bytes(salt)),
+    },
+  );
+
+  // Encode the initializer function call
+  const initializeData = implementationFactory.interface.encodeFunctionData(
+    "initialize",
+    initializeParams,
+  );
+
+  const proxyDeploy = await deployments.deploy(proxyContractName, {
+    from: deployer.address,
+    args: [implementationDeploy.address, initializeData],
+    log: true,
+    deterministicDeployment: ethers.keccak256(ethers.toUtf8Bytes(salt)),
+  });
+
+  console.log(``);
+  console.log(``);
+  console.log(``);
+  console.log(`**************************************************************`);
+  console.log(`**************************************************************`);
+  console.log(`**************************************************************`);
+  console.log(`********** Save contract to .openzeppelin file **********`);
+  await upgrades.forceImport(proxyDeploy.address, implementationFactory, {
+    kind: "uups",
+  });
+
+  return {
+    proxyAddress: proxyDeploy.address,
+    implementationAddress: implementationDeploy.address,
+    initializeData,
+  };
+}

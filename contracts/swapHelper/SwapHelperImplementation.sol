@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.24;
+pragma solidity 0.8.26;
 
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
@@ -31,8 +31,6 @@ contract SwapHelperImplementation is UUPSUpgradeable, AccessControlUpgradeable, 
     address public constant VANA = address(0);
     uint256 public constant ONE_HUNDRED_PERCENT = 100e18;
 
-    error InvalidAmountIn();
-
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
@@ -43,15 +41,21 @@ contract SwapHelperImplementation is UUPSUpgradeable, AccessControlUpgradeable, 
     /// @notice Initializes the contract
     function initialize(
         address ownerAddress,
-        IWVANA initWVANA,
         address initUniswapV3Router,
         IQuoterV2 initUniswapV3Quoter
     ) external initializer {
         __UUPSUpgradeable_init();
         __AccessControl_init();
 
-        WVANA = initWVANA;
-        uniswapV3Router = initUniswapV3Router;
+        require(ownerAddress != address(0), SwapHelper__ZeroAddress());
+
+        /// @dev We allow the initial UniswapV3Router to be zero address
+        /// to have the same SwapHelper address for all networks (because
+        /// UniswapV3Router addresses are different on mainnet and Moksha).
+        if (initUniswapV3Router != address(0)) {
+            uniswapV3Router = initUniswapV3Router;
+            WVANA = IWVANA(IPeripheryImmutableState(uniswapV3Router).WETH9());
+        }
         uniswapV3Quoter = initUniswapV3Quoter;
 
         _setRoleAdmin(MAINTAINER_ROLE, DEFAULT_ADMIN_ROLE);
@@ -64,19 +68,24 @@ contract SwapHelperImplementation is UUPSUpgradeable, AccessControlUpgradeable, 
     /// @dev This function is called by the UUPS proxy to authorize upgrades
     function _authorizeUpgrade(address newImplementation) internal virtual override onlyRole(DEFAULT_ADMIN_ROLE) {}
 
-    function updateWVANA(IWVANA newWVANA) external onlyRole(MAINTAINER_ROLE) {
-        WVANA = newWVANA;
+    function version() external pure override returns (uint256) {
+        return 1;
     }
 
     function updateUniswapV3Router(address newUniswapV3Router) external onlyRole(MAINTAINER_ROLE) {
+        if (newUniswapV3Router == address(0)) revert SwapHelper__ZeroAddress();
         uniswapV3Router = newUniswapV3Router;
+        WVANA = IWVANA(IPeripheryImmutableState(uniswapV3Router).WETH9());
     }
 
     function updateUniswapV3Quoter(IQuoterV2 newUniswapV3Quoter) external onlyRole(MAINTAINER_ROLE) {
+        if (address(newUniswapV3Quoter) == address(0)) revert SwapHelper__ZeroAddress();
         uniswapV3Quoter = newUniswapV3Quoter;
     }
 
     function getPool(address tokenA, address tokenB, uint24 fee) public view returns (IUniswapV3Pool) {
+        tokenA = tokenA == VANA ? address(WVANA) : tokenA;
+        tokenB = tokenB == VANA ? address(WVANA) : tokenB;
         return
             IUniswapV3Pool(
                 PoolAddress.computeAddress(
@@ -90,13 +99,13 @@ contract SwapHelperImplementation is UUPSUpgradeable, AccessControlUpgradeable, 
         ExactInputSingleParams memory params,
         uint160 sqrtPriceLimitX96
     ) internal returns (uint256 amountInUsed, uint256 amountOut) {
+        require(params.recipient != address(0), SwapHelper__ZeroAddress());
+
         bool isVANATokenIn = params.tokenIn == VANA;
 
         // Transfer tokenIn from the caller to this contract
         if (isVANATokenIn) {
-            if (params.amountIn != msg.value) {
-                revert InvalidAmountIn();
-            }
+            require(params.amountIn == msg.value, SwapHelper__InvalidAmountIn());
             WVANA.deposit{value: msg.value}();
         } else {
             IERC20(params.tokenIn).safeTransferFrom(msg.sender, address(this), params.amountIn);
@@ -111,7 +120,7 @@ contract SwapHelperImplementation is UUPSUpgradeable, AccessControlUpgradeable, 
         address recipient = isVANATokenOut ? address(this) : params.recipient;
 
         // Approve the Uniswap router to spend tokenIn
-        IERC20(tokenIn).approve(address(uniswapV3Router), params.amountIn);
+        IERC20(tokenIn).forceApprove(uniswapV3Router, params.amountIn);
 
         uint256 tokenInBalanceBefore = IERC20(tokenIn).balanceOf(address(this));
 
@@ -153,19 +162,15 @@ contract SwapHelperImplementation is UUPSUpgradeable, AccessControlUpgradeable, 
     function exactInputSingle(
         ExactInputSingleParams calldata params
     ) external payable override returns (uint256 amountOut) {
-        (amountOut, ) = _exactInputSingle(params, 0);
+        (, amountOut) = _exactInputSingle(params, 0);
     }
 
     function _getSqrtPriceLimitX96(
-        address tokenIn,
-        address tokenOut,
-        uint24 fee,
+        bool zeroForOne,
+        uint160 currentSqrtPriceX96,
         uint256 maximumSlippagePercentage
-    ) internal view returns (uint160 sqrtPriceLimitX96) {
-        IUniswapV3Pool pool = getPool(tokenIn, tokenOut, fee);
-        (uint160 currentSqrtPriceX96, , , , , , ) = pool.slot0();
-
-        bool zeroForOne = tokenIn < tokenOut;
+    ) internal pure returns (uint160 sqrtPriceLimitX96) {
+        require(maximumSlippagePercentage <= ONE_HUNDRED_PERCENT, SwapHelper__InvalidSlippagePercentage());
 
         uint256 slippageFactor = zeroForOne
             ? ONE_HUNDRED_PERCENT - maximumSlippagePercentage
@@ -188,10 +193,13 @@ contract SwapHelperImplementation is UUPSUpgradeable, AccessControlUpgradeable, 
     ) external payable override returns (uint256 amountInUsed, uint256 amountOut) {
         address tokenIn = params.tokenIn == VANA ? address(WVANA) : params.tokenIn;
         address tokenOut = params.tokenOut == VANA ? address(WVANA) : params.tokenOut;
+
+        IUniswapV3Pool pool = getPool(tokenIn, tokenOut, params.fee);
+        (uint160 currentSqrtPriceX96, , , , , , ) = pool.slot0();
+
         uint160 sqrtPriceLimitX96 = _getSqrtPriceLimitX96(
-            tokenIn,
-            tokenOut,
-            params.fee,
+            tokenIn < tokenOut,
+            currentSqrtPriceX96,
             params.maximumSlippagePercentage
         );
 
@@ -228,27 +236,32 @@ contract SwapHelperImplementation is UUPSUpgradeable, AccessControlUpgradeable, 
 
     function quoteSlippageExactInputSingle(
         QuoteSlippageExactInputSingleParams calldata params
-    ) external view override returns (uint256 amountInUsed, uint256 amountOut) {
+    ) external view override returns (Quote memory quote) {
         address tokenIn = params.tokenIn == VANA ? address(WVANA) : params.tokenIn;
         address tokenOut = params.tokenOut == VANA ? address(WVANA) : params.tokenOut;
 
-        uint160 sqrtPriceLimitX96 = _getSqrtPriceLimitX96(
-            tokenIn,
-            tokenOut,
-            params.fee,
-            params.maximumSlippagePercentage
-        );
-
         bool zeroForOne = tokenIn < tokenOut;
 
-        Quote memory quote = simulateSwap(
-            getPool(tokenIn, tokenOut, params.fee),
-            zeroForOne,
-            params.amountIn.toInt256(),
-            sqrtPriceLimitX96
-        );
+        IUniswapV3Pool pool = getPool(tokenIn, tokenOut, params.fee);
 
-        (amountInUsed, amountOut) = (quote.amountToPay, quote.amountReceived);
+        uint128 liquidity = params.liquidity;
+        if (liquidity == 0) {
+            liquidity = pool.liquidity();
+        }
+        uint160 sqrtPriceX96 = params.sqrtPriceX96;
+        if (sqrtPriceX96 == 0) {
+            (sqrtPriceX96, , , , , , ) = pool.slot0();
+        }
+
+        Slot0 memory slot0Start = Slot0({
+            sqrtPriceX96: sqrtPriceX96,
+            tick: TickMath.getTickAtSqrtRatio(sqrtPriceX96),
+            liquidity: liquidity
+        });
+
+        uint160 sqrtPriceLimitX96 = _getSqrtPriceLimitX96(zeroForOne, sqrtPriceX96, params.maximumSlippagePercentage);
+
+        return simulateSwap(pool, zeroForOne, params.amountIn.toInt256(), sqrtPriceLimitX96, slot0Start);
     }
 
     /// @notice Computes the position in the mapping where the initialized bit for a tick lives
@@ -313,29 +326,24 @@ contract SwapHelperImplementation is UUPSUpgradeable, AccessControlUpgradeable, 
         uint160 sqrtPriceX96;
         // the current tick
         int24 tick;
-        // the most-recently updated index of the observations array
-        uint16 observationIndex;
-        // the current maximum number of observations that are being stored
-        uint16 observationCardinality;
-        // the next maximum number of observations to store, triggered in observations.write
-        uint16 observationCardinalityNext;
-        // the current protocol fee as a percentage of the swap fee taken on withdrawal
-        // represented as an integer denominator (1/x)%
-        uint8 feeProtocol;
-        // whether the pool is locked
-        bool unlocked;
+        // // the most-recently updated index of the observations array
+        // uint16 observationIndex;
+        // // the current maximum number of observations that are being stored
+        // uint16 observationCardinality;
+        // // the next maximum number of observations to store, triggered in observations.write
+        // uint16 observationCardinalityNext;
+        // // the current protocol fee as a percentage of the swap fee taken on withdrawal
+        // // represented as an integer denominator (1/x)%
+        // uint8 feeProtocol;
+        // // whether the pool is locked
+        // bool unlocked;
+        // the current liquidity in the pool
+        uint128 liquidity;
     }
 
     function slot0(IUniswapV3Pool pool) internal view returns (Slot0 memory _slot0) {
-        (
-            _slot0.sqrtPriceX96,
-            _slot0.tick,
-            _slot0.observationIndex,
-            _slot0.observationCardinality,
-            _slot0.observationCardinalityNext,
-            _slot0.feeProtocol,
-            _slot0.unlocked
-        ) = pool.slot0();
+        (_slot0.sqrtPriceX96, _slot0.tick, , , , , ) = pool.slot0();
+        _slot0.liquidity = pool.liquidity();
     }
 
     // the top level state of the swap, the results of which are recorded in storage at the end
@@ -369,33 +377,28 @@ contract SwapHelperImplementation is UUPSUpgradeable, AccessControlUpgradeable, 
         uint256 feeAmount;
     }
 
-    struct Quote {
-        int256 amount0Delta;
-        int256 amount1Delta;
-        uint256 amountToPay;
-        uint256 amountReceived;
-        uint160 sqrtPriceX96After;
-    }
-
     function simulateSwap(
         IUniswapV3Pool pool,
         bool zeroForOne,
         int256 amountSpecified,
-        uint160 sqrtPriceLimitX96
+        uint160 sqrtPriceLimitX96,
+        Slot0 memory slot0Start
     ) public view returns (Quote memory quote) {
-        require(amountSpecified != 0, "AS");
-
-        Slot0 memory slot0Start = slot0(pool);
+        require(amountSpecified != 0, Uniswap__AS());
 
         sqrtPriceLimitX96 = sqrtPriceLimitX96 == 0
             ? (zeroForOne ? TickMath.MIN_SQRT_RATIO + 1 : TickMath.MAX_SQRT_RATIO - 1)
             : sqrtPriceLimitX96;
 
+        if (slot0Start.sqrtPriceX96 == 0) {
+            slot0Start = slot0(pool);
+        }
+
         require(
             zeroForOne
                 ? sqrtPriceLimitX96 < slot0Start.sqrtPriceX96 && sqrtPriceLimitX96 > TickMath.MIN_SQRT_RATIO
                 : sqrtPriceLimitX96 > slot0Start.sqrtPriceX96 && sqrtPriceLimitX96 < TickMath.MAX_SQRT_RATIO,
-            "SPL"
+            Uniswap__SPL()
         );
 
         uint24 fee = pool.fee();
@@ -409,7 +412,7 @@ contract SwapHelperImplementation is UUPSUpgradeable, AccessControlUpgradeable, 
             amountCalculated: 0,
             sqrtPriceX96: slot0Start.sqrtPriceX96,
             tick: slot0Start.tick,
-            liquidity: pool.liquidity()
+            liquidity: slot0Start.liquidity
         });
 
         // continue swapping as long as we haven't used the entire input/output and haven't reached the price limit
@@ -487,7 +490,8 @@ contract SwapHelperImplementation is UUPSUpgradeable, AccessControlUpgradeable, 
             amount1Delta: amount1Delta,
             amountToPay: amountToPay,
             amountReceived: amountReceived,
-            sqrtPriceX96After: state.sqrtPriceX96
+            sqrtPriceX96After: state.sqrtPriceX96,
+            sqrtPriceLimitX96: sqrtPriceLimitX96
         });
     }
 }
