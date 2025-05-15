@@ -5,21 +5,12 @@ import { parseEther } from "ethers";
 import { getCurrentBlockNumber } from "../utils/timeAndBlockManipulation";
 import { deployProxy, verifyProxy } from "./helpers";
 
-const implementationContractName = "VanaEpochImplementation";
-const proxyContractName = "VanaEpochProxy";
-const proxyContractPath = "contracts/vanaEpoch/VanaEpochProxy.sol:VanaEpochProxy";
+const implementationContractName = "DLPRewardDeployerImplementation";
+const proxyContractName = "DLPRewardDeployerProxy";
+const proxyContractPath = "contracts/dlpRewardDeployer/DLPRewardDeployerProxy.sol:DLPRewardDeployerProxy";
 
 const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   const [deployer] = await ethers.getSigners();
-
-  const implementationDeploy = await deployments.deploy(
-    implementationContractName,
-    {
-      from: deployer.address,
-      args: [],
-      log: true,
-    },
-  );
 
   const DEFAULT_ADMIN_ROLE =
     "0x0000000000000000000000000000000000000000000000000000000000000000";
@@ -28,24 +19,23 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   );
 
   // Configuration values
-  const daySize = 600; // blocks per day
-  const epochSize = 91; // days per epoch
-  const epochRewardAmount = parseEther("10"); // 10 VANA per epoch
-
-  // Get DLPRegistry address from previous deployment
-  const dlpRegistryAddress = (await deployments.get("DLPRegistryProxy")).address;
+  const numberOfTranches = 90;
+  const rewardPercentage = parseEther("60");
+  const maximumSlippage = parseEther("10");
 
   const proxyDeploy = await deployProxy(
     deployer,
     proxyContractName,
     implementationContractName,
-    [{
-      ownerAddress: deployer.address,
-      dlpRegistryAddress: dlpRegistryAddress,
-      daySize: daySize,
-      epochSize: epochSize,
-      epochRewardAmount: epochRewardAmount
-    }],
+    [
+      deployer.address,
+      (await deployments.get("DLPRegistryProxy")).address,
+      (await deployments.get("VanaEpochProxy")).address,
+      (await deployments.get("DLPRewardSwapMock")).address,
+      numberOfTranches,
+      rewardPercentage,
+      maximumSlippage
+    ],
   );
 
   console.log(``);
@@ -54,7 +44,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   console.log(`**************************************************************`);
   console.log(`**************************************************************`);
   console.log(`**************************************************************`);
-  console.log(`********** VanaEpoch Deployment Completed **********`);
+  console.log(`********** DLP RewardDeployer Deployment Completed **********`);
 
   const proxy = await ethers.getContractAt(
     implementationContractName,
@@ -64,17 +54,8 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   // Configure the contract
   await proxy.connect(deployer).grantRole(MAINTAINER_ROLE, deployer);
 
-  // Now update the DLPRegistry with the VanaEpoch address
-  const dlpRegistry = await ethers.getContractAt(
-    "DLPRegistryImplementation",
-    dlpRegistryAddress
-  );
-
-  await dlpRegistry.connect(deployer).updateVanaEpoch(proxyDeploy.proxyAddress);
-
-  console.log(`VanaEpoch proxy address: ${proxyDeploy.proxyAddress}`);
-  console.log(`VanaEpoch implementation address: ${proxyDeploy.implementationAddress}`);
-  console.log(`DLPRegistry updated with VanaEpoch address`);
+  console.log(`RewardDeployer proxy address: ${proxyDeploy.proxyAddress}`);
+  console.log(`RewardDeployer implementation address: ${proxyDeploy.implementationAddress}`);
 
   await verifyProxy(
     proxyDeploy.proxyAddress,
@@ -87,4 +68,4 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
 };
 
 export default func;
-func.tags = ["VanaEpochProxy"];
+func.tags = ["DLPRewardDeployerProxy"];

@@ -5,7 +5,7 @@ import {
   DLPRegistryImplementation,
   VanaEpochImplementation,
   TreasuryImplementation,
-  DLPPerformanceImplementation
+  DLPPerformanceImplementation, DLPRewardSwapImplementation, DLPRewardDeployerImplementation
 } from "../typechain-types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import {
@@ -21,10 +21,12 @@ chai.use(chaiAsPromised);
 should();
 
 describe("DLP fork tests", () => {
-  const vanaEpochAddress = "0xe924Bd6170192a97ca37C91069A7f43C55ebe7df";
+  const vanaEpochAddress = "0xb35480AdB5757Cab703e13c529d8fC0781343516";
   const treasuryAddress = "0x05aa58a6B51446A27a02aA5725c602AEc0E4500d";
   const dlpRegistryAddress = "0xA6dFc0ef21D91F166Ca51c731D1a115a5b715a3F";
   const dlpPerformanceAddress = "0x4FEa7823D2E727F6D1F83422A7FD619070B06832";
+  const dlpRewardSwapAddress = "0x011D527151Ae1f80991c07F8AE64350655A4AeA0";
+  const dlpRewardDeployerAddress = "0x1066cEA72d975B23c7B43557d468ac8674A452Bd";
   const adminAddress = "0x2AC93684679a5bdA03C6160def908CdB8D46792f";
 
   enum DlpStatus {
@@ -42,6 +44,8 @@ describe("DLP fork tests", () => {
   let vanaEpoch: VanaEpochImplementation;
   let treasury: TreasuryImplementation;
   let dlpPerformance: DLPPerformanceImplementation;
+  let dlpRewardSwap: DLPRewardSwapImplementation;
+  let dlpRewardDeployer: DLPRewardDeployerImplementation;
 
 
   const DEFAULT_ADMIN_ROLE =
@@ -89,9 +93,12 @@ describe("DLP fork tests", () => {
     vanaEpoch = await ethers.getContractAt("VanaEpochImplementation", vanaEpochAddress);
     treasury = await ethers.getContractAt("TreasuryImplementation", treasuryAddress);
     dlpPerformance = await ethers.getContractAt("DLPPerformanceImplementation", dlpPerformanceAddress);
-
+    dlpRewardSwap = await ethers.getContractAt("DLPRewardSwapImplementation", dlpRewardSwapAddress);
+    dlpRewardDeployer = await ethers.getContractAt("DLPRewardDeployerImplementation", dlpRewardDeployerAddress);
 
     await setBalance(adminAddress, parseEther(100));
+
+    console.log("Fork block number: ", await getCurrentBlockNumber());
   };
 
   async function advanceToEpochN(epochNumber: number) {
@@ -103,6 +110,19 @@ describe("DLP fork tests", () => {
     });
 
     it("should savePerformance", async function() {
+      // await dlpPerformance
+      //   .connect(admin)
+      //   .upgradeToAndCall(
+      //     await ethers.deployContract("DLPPerformanceImplementation"),
+      //     "0x",
+      //   );
+      // await vanaEpoch
+      //   .connect(admin)
+      //   .upgradeToAndCall(
+      //     await ethers.deployContract("VanaEpochImplementation"),
+      //     "0x",
+      //   );
+
       const epoch1Performances = [
         {
           dlpId: 1,
@@ -110,12 +130,36 @@ describe("DLP fork tests", () => {
           tradingVolume: parseEther(1000),
           uniqueContributors: 50n,
           dataAccessFees: parseEther(5)
+        },
+        {
+          dlpId: 2,
+          totalScore: parseEther(0.4),
+          tradingVolume: parseEther(1000),
+          uniqueContributors: 50n,
+          dataAccessFees: parseEther(5)
         }
       ];
 
-      await vanaEpoch.connect(admin).grantRole("0x0e4b5abdbacc88ea82f7039d0cc2b0185da78d8fe1d85531edfebd57d65707d5", dlpPerformance);
+      await dlpPerformance.connect(admin).saveEpochPerformances(1, epoch1Performances, true);
+    });
 
-      await dlpPerformance.connect(admin).saveEpochPerformances(1, epoch1Performances, false);
+    it("should distributeRewards", async function() {
+      await dlpRegistry.connect(admin). updateDlpLpTokenId(1, 86);
+      await dlpRegistry.connect(admin). updateDlpToken(1, '0xb95C6ED43B965D1050161a6A6D78170eFEf5dbF2');
+
+      await dlpRewardDeployer.connect(admin).updateDlpRewardSwap('0x7c6862C46830F0fc3bF3FF509EA1bD0EE7267fB0');
+
+      const tokenContract = await ethers.getContractAt("DAT", "0xb95C6ED43B965D1050161a6A6D78170eFEf5dbF2");
+      await setBalance((await dlpRewardDeployer.treasury()).toString(), parseEther(10));
+      console.log("Balance: ", await tokenContract.balanceOf((await dlpRegistry.dlps(1)).treasuryAddress));
+      await dlpRewardDeployer.connect(admin).distributeRewards(1, [1]);
+      console.log("Balance: ", await tokenContract.balanceOf((await dlpRegistry.dlps(1)).treasuryAddress));
+    });
+
+    it.only("should migrateDlpsData", async function() {
+      await dlpRegistry.connect(admin).migrateDlpData('0x0aBa5e28228c323A67712101d61a54d4ff5720FD', 1, 1);
+
+      console.log(await dlpRegistry.dlps(1));
     });
   });
 });

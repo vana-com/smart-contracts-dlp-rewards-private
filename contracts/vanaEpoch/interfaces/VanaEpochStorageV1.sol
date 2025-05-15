@@ -5,6 +5,7 @@ import "./IVanaEpoch.sol";
 
 abstract contract VanaEpochStorageV1 is IVanaEpoch {
     IDLPRegistry public override dlpRegistry;
+    IDLPPerformance public override dlpPerformance;
 
     uint256 public override epochRewardAmount;
     uint256 public override daySize;
@@ -14,5 +15,4 @@ abstract contract VanaEpochStorageV1 is IVanaEpoch {
     uint256 public override epochsCount;
     mapping(uint256 epochId => Epoch epoch) internal _epochs;
 
-    IDLPPerformance public override dlpPerformance;
 }

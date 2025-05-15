@@ -39,12 +39,12 @@ const config: HardhatUserConfig = {
     hardhat: {
       allowUnlimitedContractSize: true,
       chainId: 1480,
-      // forking: {
+      forking: {
       //   url: process.env.VANA_RPC_URL || "",
       //   blockNumber: 2_500_000,
-        // url: process.env.MOKSHA_RPC_URL || "",
+        url: process.env.MOKSHA_RPC_URL || "",
         // blockNumber: 2_569_780,
-      // },
+      },
       chains: {
         1480: {
           hardforkHistory: {
