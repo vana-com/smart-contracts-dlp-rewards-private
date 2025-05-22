@@ -12,14 +12,7 @@ const proxyContractPath = "contracts/vanaEpoch/VanaEpochProxy.sol:VanaEpochProxy
 const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   const [deployer] = await ethers.getSigners();
 
-  const implementationDeploy = await deployments.deploy(
-    implementationContractName,
-    {
-      from: deployer.address,
-      args: [],
-      log: true,
-    },
-  );
+  const ownerAddress = process.env.OWNER_ADDRESS ?? deployer.address;
 
   const DEFAULT_ADMIN_ROLE =
     "0x0000000000000000000000000000000000000000000000000000000000000000";
@@ -40,7 +33,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     proxyContractName,
     implementationContractName,
     [{
-      ownerAddress: deployer.address,
+      ownerAddress: ownerAddress,
       dlpRegistryAddress: dlpRegistryAddress,
       daySize: daySize,
       epochSize: epochSize,

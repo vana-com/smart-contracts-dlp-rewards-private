@@ -12,14 +12,7 @@ const proxyContractPath = "contracts/treasury/DLPRewardDeployerTreasuryProxy.sol
 const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   const [deployer] = await ethers.getSigners();
 
-  const implementationDeploy = await deployments.deploy(
-    implementationContractName,
-    {
-      from: deployer.address,
-      args: [],
-      log: true,
-    },
-  );
+  const ownerAddress = process.env.OWNER_ADDRESS ?? deployer.address;
 
   // Get DLPRegistry address from previous deployment
   const dlpRewardDeployerAddress = (await deployments.get("DLPRewardDeployerProxy")).address;
@@ -34,7 +27,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     deployer,
     proxyContractName,
     implementationContractName,
-    [deployer.address, dlpRewardDeployerAddress],
+    [ownerAddress, dlpRewardDeployerAddress],
   );
 
   console.log(``);

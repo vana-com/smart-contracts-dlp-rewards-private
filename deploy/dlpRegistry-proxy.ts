@@ -2,7 +2,6 @@ import { deployments, ethers } from "hardhat";
 import { HardhatRuntimeEnvironment } from "hardhat/types";
 import { DeployFunction } from "hardhat-deploy/types";
 import { parseEther } from "ethers";
-import { getCurrentBlockNumber } from "../utils/timeAndBlockManipulation";
 import { deployProxy, verifyProxy } from "./helpers";
 
 const implementationContractName = "DLPRegistryImplementation";
@@ -18,6 +17,8 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     ethers.toUtf8Bytes("MAINTAINER_ROLE"),
   );
 
+  const ownerAddress = process.env.OWNER_ADDRESS ?? deployer.address;
+
   // Configuration values
   const dlpRegistrationDepositAmount = parseEther("1");
 
@@ -25,7 +26,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     deployer,
     proxyContractName,
     implementationContractName,
-    [deployer.address],
+    [ownerAddress],
   );
 
   console.log(``);
@@ -42,8 +43,8 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   );
 
   // Configure the contract
-  await proxy.connect(deployer).grantRole(MAINTAINER_ROLE, deployer);
-  await proxy.connect(deployer).updateDlpRegistrationDepositAmount(dlpRegistrationDepositAmount);
+  // await proxy.connect(deployer).grantRole(MAINTAINER_ROLE, deployer);
+  // await proxy.connect(deployer).updateDlpRegistrationDepositAmount(dlpRegistrationDepositAmount);
 
   console.log(`Registry proxy address: ${proxyDeploy.proxyAddress}`);
   console.log(`Registry implementation address: ${proxyDeploy.implementationAddress}`);

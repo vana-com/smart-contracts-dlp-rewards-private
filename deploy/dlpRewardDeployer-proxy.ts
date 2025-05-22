@@ -18,6 +18,8 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     ethers.toUtf8Bytes("MAINTAINER_ROLE"),
   );
 
+  const ownerAddress = process.env.OWNER_ADDRESS ?? deployer.address;
+
   // Configuration values
   const numberOfTranches = 90;
   const rewardPercentage = parseEther("60");
@@ -28,10 +30,10 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     proxyContractName,
     implementationContractName,
     [
-      deployer.address,
+      ownerAddress,
       (await deployments.get("DLPRegistryProxy")).address,
       (await deployments.get("VanaEpochProxy")).address,
-      (await deployments.get("DLPRewardSwapMock")).address,
+      '0x7c6862C46830F0fc3bF3FF509EA1bD0EE7267fB0',
       numberOfTranches,
       rewardPercentage,
       maximumSlippage
