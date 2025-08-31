@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
-contract DLPRewardSwapImplementationMock
+contract DLPRewardSwapMock
 {
     address public constant VANA = address(0);
     uint256 public constant ONE_HUNDRED_PERCENT = 100e18;

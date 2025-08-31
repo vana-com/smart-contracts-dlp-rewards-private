@@ -12,15 +12,6 @@ const proxyContractPath = "contracts/treasury/DLPRegistryTreasuryProxy.sol:DLPRe
 const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   const [deployer] = await ethers.getSigners();
 
-  const implementationDeploy = await deployments.deploy(
-    implementationContractName,
-    {
-      from: deployer.address,
-      args: [],
-      log: true,
-    },
-  );
-
   const DEFAULT_ADMIN_ROLE =
     "0x0000000000000000000000000000000000000000000000000000000000000000";
   const CUSTODIAN_ROLE = ethers.keccak256(

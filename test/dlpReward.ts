@@ -183,7 +183,7 @@ describe("DLP System Tests", () => {
       dlpPerformanceDeploy.target
     );
 
-    dlpRewardSwap = await ethers.deployContract("DLPRewardSwapImplementationMock", []);
+    dlpRewardSwap = await ethers.deployContract("DLPRewardSwapMock", []);
 
 
     const dlpRewardDeployerDeploy = await upgrades.deployProxy(
@@ -1283,7 +1283,7 @@ describe("DLP System Tests", () => {
     });
   });
 
-  describe.only("Dlp Reward Deployer", () => {
+  describe("Dlp Reward Deployer", () => {
     const dlp1PerformanceDefault = {
       dlpId: 1,
       totalScore: parseEther(0.6),
@@ -1389,7 +1389,7 @@ describe("DLP System Tests", () => {
         );
     });
 
-    it.only("should distributeRewards", async function () {
+    it("should distributeRewards", async function () {
       await advanceToEpochN(2);
 
       await vanaEpoch.connect(user1).createEpochs();
@@ -1431,7 +1431,7 @@ describe("DLP System Tests", () => {
       epoch1Dlp1DistributedRewards[0].usedVanaAmount.should.eq(usedVanaAmount);
     });
 
-    it.only("should distributeRewards multiple times", async function () {
+    it("should distributeRewards multiple times", async function () {
       await advanceToEpochN(2);
 
       await vanaEpoch.connect(user1).createEpochs();

@@ -1,0 +1,36 @@
+{
+  "language": "Solidity",
+  "sources": {
+    "contracts/mocks/dlpRewardSwapMock/DLPRewardSwapMock.sol": {
+      "content": "// SPDX-License-Identifier: MIT\npragma solidity 0.8.28;\n\ncontract DLPRewardSwapMock\n{\n    address public constant VANA = address(0);\n    uint256 public constant ONE_HUNDRED_PERCENT = 100e18;\n\n    error DLPRewardSwap__ZeroAddress();\n    error DLPRewardSwap__ZeroAmount();\n    error DLPRewardSwap__ZeroAmountSwapIn();\n    error DLPRewardSwap__ZeroLiquidity();\n    error DLPRewardSwap__InsufficientAmount(address token, uint256 expected, uint256 actual);\n    error DLPRewardSwap__InvalidRange();\n    error DLPRewardSwap__LPAmountMismatch();\n    error DLPRewardSwap__SpareAmountMismatch(address token, uint256 expected, uint256 actual);\n    error DLPRewardSwap__LiquidityMismatch(uint128 expected, uint128 actual);\n    error DLPRewardSwap__VanaInMismatch(uint256 expected, uint256 actual);\n    error DLPRewardSwap__AmountMismatch(uint256 amountIn, uint256 used, uint256 spareVana, uint256 unusedVana);\n    error DLPRewardSwap__InvalidSlippagePercentage();\n    error DLPRewardSwap__InvalidRewardPercentage();\n    error DLPRewardSwap__InvalidLpTokenId();\n\n    uint256 public tokenRewardAmount;\n    uint256 public spareToken;\n    uint256 public spareVana;\n    uint256 public usedVanaAmount;\n\n    function setSplitRewardSwapResponse(\n        uint256 _tokenRewardAmount,\n        uint256 _spareToken,\n        uint256 _spareVana,\n        uint256 _usedVanaAmount\n    ) external {\n        tokenRewardAmount = _tokenRewardAmount;\n        spareToken = _spareToken;\n        spareVana = _spareVana;\n        usedVanaAmount = _usedVanaAmount;\n    }\n\n    struct SplitRewardSwapParams {\n        uint256 lpTokenId;\n        uint256 rewardPercentage;\n        uint256 maximumSlippagePercentage;\n        address rewardRecipient;\n        address spareRecipient;\n    }\n\n    struct QuoteSplitRewardSwapParams {\n        uint256 amountIn;\n        uint256 lpTokenId;\n        uint256 rewardPercentage;\n        uint256 maximumSlippagePercentage;\n    }\n\n    function splitRewardSwap(\n        SplitRewardSwapParams calldata params\n    )\n        external\n        payable\n        returns (uint256 tokenRewardAmount, uint256 spareToken, uint256 spareVana, uint256 usedVanaAmount)\n    {\n        uint256 amountIn = msg.value;\n        require(amountIn > 0, DLPRewardSwap__ZeroAmount());\n        require(params.rewardPercentage <= ONE_HUNDRED_PERCENT, DLPRewardSwap__InvalidRewardPercentage());\n        require(params.maximumSlippagePercentage <= ONE_HUNDRED_PERCENT, DLPRewardSwap__InvalidSlippagePercentage());\n        require(params.rewardRecipient != address(0), DLPRewardSwap__ZeroAddress());\n        require(params.spareRecipient != address(0), DLPRewardSwap__ZeroAddress());\n\n        tokenRewardAmount = this.tokenRewardAmount();\n        spareToken = this.spareToken();\n        spareVana = this.spareVana();\n        usedVanaAmount = this.usedVanaAmount();\n    }\n\n    function quoteSplitRewardSwap(\n        QuoteSplitRewardSwapParams calldata params\n    )\n        external\n        returns (uint256 tokenRewardAmount, uint256 spareToken, uint256 spareVana, uint256 usedVanaAmount)\n    {\n        require(params.amountIn > 0, DLPRewardSwap__ZeroAmount());\n        require(params.rewardPercentage <= ONE_HUNDRED_PERCENT, DLPRewardSwap__InvalidRewardPercentage());\n        require(params.maximumSlippagePercentage <= ONE_HUNDRED_PERCENT, DLPRewardSwap__InvalidSlippagePercentage());\n\n        tokenRewardAmount = this.tokenRewardAmount();\n        spareToken = this.spareToken();\n        spareVana = this.spareVana();\n        usedVanaAmount = this.usedVanaAmount();\n    }\n}\n"
+    }
+  },
+  "settings": {
+    "optimizer": {
+      "enabled": true,
+      "runs": 1
+    },
+    "evmVersion": "paris",
+    "outputSelection": {
+      "*": {
+        "*": [
+          "abi",
+          "evm.bytecode",
+          "evm.deployedBytecode",
+          "evm.methodIdentifiers",
+          "metadata",
+          "storageLayout",
+          "devdoc",
+          "userdoc",
+          "evm.gasEstimates"
+        ],
+        "": [
+          "ast"
+        ]
+      }
+    },
+    "metadata": {
+      "useLiteralContent": true
+    }
+  }
+}

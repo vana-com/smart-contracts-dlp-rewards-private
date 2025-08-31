@@ -1,8 +1,6 @@
 import { deployments, ethers } from "hardhat";
 import { HardhatRuntimeEnvironment } from "hardhat/types";
 import { DeployFunction } from "hardhat-deploy/types";
-import { parseEther } from "ethers";
-import { getCurrentBlockNumber } from "../utils/timeAndBlockManipulation";
 import { deployProxy, verifyProxy } from "./helpers";
 
 const implementationContractName = "DLPPerformanceImplementation";
@@ -12,14 +10,7 @@ const proxyContractPath = "contracts/dlpPerformance/DLPPerformanceProxy.sol:DLPP
 const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   const [deployer] = await ethers.getSigners();
 
-  const implementationDeploy = await deployments.deploy(
-    implementationContractName,
-    {
-      from: deployer.address,
-      args: [],
-      log: true,
-    },
-  );
+  const ownerAddress = process.env.OWNER_ADDRESS ?? deployer.address;
 
   const DEFAULT_ADMIN_ROLE =
     "0x0000000000000000000000000000000000000000000000000000000000000000";
@@ -37,7 +28,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     deployer,
     proxyContractName,
     implementationContractName,
-    [deployer.address, dlpRegistryAddress],
+    [ownerAddress, dlpRegistryAddress],
   );
 
   console.log(``);
@@ -60,7 +51,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   // Get VanaEpoch address from previous deployment
   const vanaEpochAddress = (await deployments.get("VanaEpochProxy")).address;
 
-  await proxy.connect(deployer).updateVanaEpoch(vanaEpochAddress);
+  // await proxy.connect(deployer).updateVanaEpoch(vanaEpochAddress);
   console.log(`DLPPerformance updated with VanaEpoch address`);
 
   console.log(`DLPPerformance proxy address: ${proxyDeploy.proxyAddress}`);
@@ -73,12 +64,12 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
 
   await vanaEpoch.connect(deployer).updateDlpPerformance(proxyDeploy.proxyAddress);
 
-  await verifyProxy(
-    proxyDeploy.proxyAddress,
-    proxyDeploy.implementationAddress,
-    proxyDeploy.initializeData,
-    proxyContractPath,
-  );
+  // await verifyProxy(
+  //   proxyDeploy.proxyAddress,
+  //   proxyDeploy.implementationAddress,
+  //   proxyDeploy.initializeData,
+  //   proxyContractPath,
+  // );
 
   return;
 };
